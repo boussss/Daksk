@@ -1,13 +1,12 @@
 // userController.js
 const asyncHandler = require('express-async-handler');
-const { User, Transaction, Banner } = require('./models');
+const { User, Transaction, Plan, PlanInstance } = require('./models'); // Adicionado Plan e PlanInstance para populate
 const { generateToken, generateUniqueUserId, generateInviteLink } = require('./utils');
 
 // @desc    Cadastrar um novo usuário
 // @route   POST /api/users/register
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
-  // Desestrutura os novos campos do corpo da requisição
   const { name, username, phone, pin, invitedById } = req.body;
 
   if (!name || !username || !phone || !pin) {
@@ -15,7 +14,6 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('Por favor, preencha todos os campos obrigatórios.');
   }
 
-  // Verifica se o username ou telefone já existem para evitar duplicados
   const usernameExists = await User.findOne({ username });
   if (usernameExists) {
     res.status(400);
@@ -32,7 +30,6 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('O PIN deve ter entre 4 e 6 dígitos.');
   }
 
-  // Gera um ID único e garante que ele não existe no banco de dados
   let newUserId;
   let userExists = true;
   while (userExists) {
@@ -45,7 +42,6 @@ const registerUser = asyncHandler(async (req, res) => {
       invitedByUser = await User.findOne({ userId: invitedById });
   }
 
-  // Cria o novo usuário com todos os campos
   const user = await User.create({
     name,
     username,
@@ -55,16 +51,13 @@ const registerUser = asyncHandler(async (req, res) => {
     invitedBy: invitedByUser ? invitedByUser._id : null,
   });
   
-  // Atualiza o link de convite do usuário
   user.inviteLink = generateInviteLink(user.userId);
   
-  // Adiciona o bônus de boas-vindas
   const welcomeBonusAmount = 50;
   user.bonusBalance += welcomeBonusAmount;
   
   await user.save();
 
-  // Cria a transação de bônus de boas-vindas
   await Transaction.create({
     user: user._id,
     type: 'welcome_bonus',
@@ -89,17 +82,14 @@ const registerUser = asyncHandler(async (req, res) => {
 // @route   POST /api/users/login
 // @access  Public
 const loginUser = asyncHandler(async (req, res) => {
-  // ATUALIZAÇÃO: Login agora usa telefone (único) + PIN
   const { phone, pin } = req.body;
   if (!phone || !pin) {
     res.status(400);
     throw new Error('Por favor, forneça o número de telefone e o PIN.');
   }
 
-  // Encontra o usuário pelo número de telefone
   const user = await User.findOne({ phone });
 
-  // Se o usuário existir, compara o PIN fornecido com o PIN salvo (texto puro)
   if (user && user.pin === pin) {
     if (user.isBlocked) {
       res.status(403);
@@ -128,7 +118,10 @@ const getUserProfile = asyncHandler(async (req, res) => {
 // @route   GET /api/users/dashboard
 // @access  Private
 const getDashboardData = asyncHandler(async (req, res) => {
-    const user = await User.findById(req.user._id)
+    const userId = req.user._id;
+
+    // --- 1. Obter dados básicos do usuário e do plano ativo ---
+    const user = await User.findById(userId)
         .select('-pin')
         .populate({
             path: 'activePlanInstance',
@@ -137,21 +130,49 @@ const getDashboardData = asyncHandler(async (req, res) => {
 
     if (!user) { res.status(404); throw new Error('Usuário não encontrado.'); }
 
-    let canCollect = false;
-    if (user.activePlanInstance) {
-        const instance = user.activePlanInstance;
-        if (!instance.lastCollectedDate) {
-            canCollect = true;
-        } else {
-            const nextCollectionTime = new Date(instance.lastCollectedDate).getTime() + (24 * 60 * 60 * 1000);
-            if (Date.now() >= nextCollectionTime) {
-                canCollect = true;
-            }
+    // --- 2. Calcular estatísticas de lucro com datas ---
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Função auxiliar para rodar a agregação
+    const getProfitSum = async (startDate, endDate, types) => {
+        const result = await Transaction.aggregate([
+            { $match: { 
+                user: userId, 
+                status: 'approved', 
+                type: { $in: types }, 
+                createdAt: { $gte: startDate, $lt: endDate } 
+            }},
+            { $group: { _id: null, total: { $sum: '$amount' } } }
+        ]);
+        return result.length > 0 ? result[0].total : 0;
+    };
+
+    const profitTypes = ['collection', 'commission'];
+
+    // Executa os cálculos em paralelo para mais performance
+    const [todayProfit, yesterdayProfit, monthProfit, totalReferralProfit] = await Promise.all([
+        getProfitSum(todayStart, new Date(todayStart.getTime() + 24 * 60 * 60 * 1000), profitTypes),
+        getProfitSum(yesterdayStart, todayStart, profitTypes),
+        getProfitSum(monthStart, new Date(now.getFullYear(), now.getMonth() + 1, 1), profitTypes),
+        getProfitSum(new Date(0), new Date(), ['commission']) // Comissão total (desde o início)
+    ]);
+    
+    // --- 3. Montar o objeto de resposta final ---
+    res.json({ 
+        user,
+        stats: {
+            todayProfit,
+            yesterdayProfit,
+            monthProfit,
+            totalReferralProfit,
         }
-    }
-    const banners = await Banner.find({ isActive: true });
-    res.json({ user, banners, canCollect });
+    });
 });
+
 
 // @desc    Fazer upload da foto de perfil
 // @route   POST /api/users/profile/picture
@@ -170,7 +191,6 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
 // @route   POST /api/users/deposit
 // @access  Private
 const createDepositRequest = asyncHandler(async (req, res) => {
-    // proofText virá do corpo se for um SMS
     const { amount, proofText } = req.body; 
 
     if (!amount || amount <= 0) { 
@@ -178,22 +198,18 @@ const createDepositRequest = asyncHandler(async (req, res) => {
         throw new Error("O valor do depósito deve ser maior que zero."); 
     }
 
-    // Verifica se pelo menos um tipo de comprovativo foi enviado
     if (!req.file && !proofText) {
         res.status(400);
         throw new Error("O comprovativo de depósito (imagem ou texto) é obrigatório.");
     }
 
-    // Prepara os detalhes da transação com base no tipo de comprovativo
     let transactionDetails = {};
     if (req.file) {
-        // Se for uma imagem, salva a URL
         transactionDetails = { 
             proofType: 'image',
             proofImageUrl: req.file.path 
         };
     } else {
-        // Se for texto, salva o texto
         transactionDetails = { 
             proofType: 'text',
             proofText: proofText 
@@ -206,7 +222,7 @@ const createDepositRequest = asyncHandler(async (req, res) => {
         amount: Number(amount), 
         status: 'pending',
         description: `Requisição de depósito de ${amount} MT`,
-        transactionDetails: transactionDetails // Usa o objeto que criamos
+        transactionDetails: transactionDetails
     });
     
     res.status(201).json({ 
@@ -244,15 +260,49 @@ const getUserTransactions = asyncHandler(async (req, res) => {
 // @route   GET /api/users/referrals
 // @access  Private
 const getReferralData = asyncHandler(async (req, res) => {
-    const referrals = await User.find({ invitedBy: req.user._id }).select('userId createdAt activePlanInstance');
+    // Busca os convidados e popula os dados do plano ativo e os detalhes do plano
+    const referrals = await User.find({ invitedBy: req.user._id })
+        .select('userId username createdAt activePlanInstance')
+        .populate({
+            path: 'activePlanInstance',
+            populate: {
+                path: 'plan',
+                model: 'Plan',
+                select: 'name' // Seleciona apenas o nome do plano
+            }
+        });
+
+    // Função para calcular o total de comissão para um convidado específico
+    const getCommissionFromReferral = async (referralUserId) => {
+        const result = await Transaction.aggregate([
+            { $match: {
+                user: req.user._id,
+                type: 'commission',
+                status: 'approved',
+                // Procura pela descrição que contém o ID do convidado
+                description: { $regex: new RegExp(referralUserId) }
+            }},
+            { $group: { _id: null, total: { $sum: '$amount' } } }
+        ]);
+        return result.length > 0 ? result[0].total : 0;
+    };
+
+    // Mapeia os convidados para o formato desejado, calculando a comissão para cada um
+    const referralsList = await Promise.all(referrals.map(async (ref) => {
+        const totalYield = await getCommissionFromReferral(ref.userId);
+        return {
+            userId: ref.userId,
+            username: ref.username,
+            joinDate: ref.createdAt,
+            planName: ref.activePlanInstance ? ref.activePlanInstance.plan.name : 'Nenhum',
+            totalYield: totalYield,
+        };
+    }));
+
     res.json({
         inviteLink: req.user.inviteLink,
         referralCount: referrals.length,
-        referralsList: referrals.map(ref => ({
-            userId: ref.userId,
-            joinDate: ref.createdAt,
-            isActive: !!ref.activePlanInstance
-        })),
+        referralsList: referralsList,
     });
 });
 
