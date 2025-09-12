@@ -243,14 +243,6 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
     res.status(201).json({ message: "Requisição de saque enviada com sucesso. Aguardando aprovação.", transaction: withdrawalTransaction });
 });
 
-// @desc    Obter histórico de transações do usuário
-// @route   GET /api/users/transactions
-// @access  Private
-const getUserTransactions = asyncHandler(async (req, res) => {
-    const transactions = await Transaction.find({ user: req.user._id }).sort({ createdAt: -1 });
-    res.json(transactions);
-});
-
 // @desc    Obter dados de referência do usuário
 // @route   GET /api/users/referrals
 // @access  Private
@@ -297,17 +289,6 @@ const getReferralData = asyncHandler(async (req, res) => {
     });
 });
 
-// @desc    Obter histórico de planos do usuário
-// @route   GET /api/users/plan-history
-// @access  Private
-const getPlanHistory = asyncHandler(async (req, res) => {
-    const planInstances = await PlanInstance.find({ user: req.user._id })
-        .populate('plan', 'name')
-        .sort({ startDate: -1 });
-
-    res.status(200).json(planInstances);
-});
-
 // @desc    Obter um resumo estatístico da carteira
 // @route   GET /api/users/wallet-summary
 // @access  Private
@@ -345,6 +326,21 @@ const getWalletSummary = asyncHandler(async (req, res) => {
     });
 });
 
+// @desc    Obter histórico de planos e de transações do usuário
+// @route   GET /api/users/history
+// @access  Private
+const getHistoryData = asyncHandler(async (req, res) => {
+    const [planInstances, transactions] = await Promise.all([
+        PlanInstance.find({ user: req.user._id })
+            .populate('plan', 'name')
+            .sort({ startDate: -1 }),
+        Transaction.find({ user: req.user._id })
+            .sort({ createdAt: -1 })
+    ]);
+
+    res.status(200).json({ planInstances, transactions });
+});
+
 module.exports = {
   registerUser,
   loginUser,
@@ -353,8 +349,7 @@ module.exports = {
   uploadProfilePicture,
   createDepositRequest,
   createWithdrawalRequest,
-  getUserTransactions,
   getReferralData,
-  getPlanHistory,
   getWalletSummary,
+  getHistoryData,
 };
