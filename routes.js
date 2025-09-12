@@ -28,6 +28,8 @@ userRouter.post('/login', userController.loginUser);
 userRouter.get('/me', protectUser, userController.getUserProfile);
 userRouter.get('/dashboard', protectUser, userController.getDashboardData);
 userRouter.post('/profile/picture', protectUser, uploadProfilePic.single('image'), userController.uploadProfilePicture);
+userRouter.get('/plan-history', protectUser, userController.getPlanHistory);
+userRouter.get('/wallet-summary', protectUser, userController.getWalletSummary); // --- ROTA ADICIONADA AQUI ---
 
 // --- Transações do Usuário (Rotas Protegidas) ---
 userRouter.get('/transactions', protectUser, userController.getUserTransactions);
@@ -45,7 +47,8 @@ userRouter.get('/referrals', protectUser, userController.getReferralData);
 planRouter.get('/', protectUser, plansController.getAllAvailablePlans);
 planRouter.post('/:planId/activate', protectUser, plansController.activatePlan);
 planRouter.post('/collect', protectUser, plansController.collectDailyProfit);
-planRouter.post('/upgrade/:newPlanId', protectUser, plansController.upgradePlan); // Rota para upgrade
+planRouter.post('/upgrade/:newPlanId', protectUser, plansController.upgradePlan);
+planRouter.post('/:instanceId/renew', protectUser, plansController.renewPlan);
 
 
 //=====================================================
@@ -70,7 +73,7 @@ adminRouter.put('/users/:id/block', protectAdmin, adminController.toggleUserBloc
 adminRouter.put('/users/:id/balance', protectAdmin, adminController.updateUserBalance);
 
 // --- Gerenciamento de Planos ---
-adminRouter.get('/plans', protectAdmin, plansController.getAllPlansForAdmin); // Rota para o admin listar os planos
+adminRouter.get('/plans', protectAdmin, plansController.getAllPlansForAdmin);
 adminRouter.post('/plans', protectAdmin, uploadPlanImage.single('image'), plansController.createPlan);
 adminRouter.put('/plans/:id', protectAdmin, uploadPlanImage.single('image'), plansController.updatePlan);
 adminRouter.delete('/plans/:id', protectAdmin, plansController.deletePlan);

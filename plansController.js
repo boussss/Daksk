@@ -90,24 +90,17 @@ const activatePlan = asyncHandler(async (req, res) => {
         description: `Investimento no plano "${plan.name}"`,
     });
 
-    // --- NOVA LÓGICA DE COLETA IMEDIATA ---
-    // 1. Adiciona o lucro do primeiro dia diretamente à carteira do usuário.
     user.walletBalance += dailyProfit;
-    
-    // 2. Define a data da última coleta como agora, para que o próximo ciclo de 24h comece imediatamente.
     newPlanInstance.lastCollectedDate = new Date();
     newPlanInstance.totalCollected += dailyProfit;
-
-    // 3. Cria uma transação para registrar esta primeira coleta automática.
+    await newPlanInstance.save();
+    
     await Transaction.create({
         user: user._id,
         type: 'collection',
         amount: dailyProfit,
         description: 'Coleta inicial na ativação do plano'
     });
-    
-    await newPlanInstance.save();
-    // --- FIM DA NOVA LÓGICA ---
 
     if (user.invitedBy) {
         const referrer = await User.findById(user.invitedBy);
@@ -125,13 +118,10 @@ const activatePlan = asyncHandler(async (req, res) => {
         }
     }
     
-    // Salva o usuário por último, após todas as alterações de saldo.
     await user.save();
 
     res.status(201).json({ message: 'Plano ativado com sucesso!', planInstance: newPlanInstance });
 });
-
-// ... (O restante do arquivo: upgradePlan, collectDailyProfit, e funções de admin permanecem os mesmos)
 
 /**
  * @desc    Fazer upgrade de um plano ativo para um superior
@@ -250,6 +240,72 @@ const collectDailyProfit = asyncHandler(async (req, res) => {
     res.json({ message: `Você coletou ${profit} MT com sucesso.` });
 });
 
+/**
+ * @desc    Renovar um plano expirado
+ * @route   POST /api/plans/:instanceId/renew
+ * @access  Private
+ */
+const renewPlan = asyncHandler(async (req, res) => {
+    const { instanceId } = req.params;
+    const user = await User.findById(req.user._id);
+
+    const oldInstance = await PlanInstance.findById(instanceId).populate('plan');
+    if (!oldInstance || oldInstance.user.toString() !== user._id.toString()) {
+        return res.status(404).json({ message: 'Histórico de plano não encontrado.' });
+    }
+
+    if (oldInstance.status !== 'expired') {
+        return res.status(400).json({ message: 'Apenas planos expirados podem ser renovados.' });
+    }
+
+    if (user.activePlanInstance) {
+        return res.status(400).json({ message: 'Você já possui um plano ativo. Não é possível renovar outro no momento.' });
+    }
+
+    const planToRenew = oldInstance.plan;
+    const renewalCost = planToRenew.minAmount;
+
+    if (user.walletBalance < renewalCost) {
+        return res.status(400).json({ message: `Saldo insuficiente. Você precisa de ${renewalCost} MT para renovar.` });
+    }
+
+    user.walletBalance -= renewalCost;
+
+    const dailyProfit = planToRenew.dailyYieldType === 'fixed' 
+        ? planToRenew.dailyYieldValue 
+        : (renewalCost * planToRenew.dailyYieldValue) / 100;
+        
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + planToRenew.durationDays);
+
+    const newInstance = await PlanInstance.create({
+        user: user._id,
+        plan: planToRenew._id,
+        investedAmount: renewalCost,
+        dailyProfit: dailyProfit,
+        endDate: endDate,
+    });
+    
+    user.walletBalance += dailyProfit;
+    newInstance.lastCollectedDate = new Date();
+    newInstance.totalCollected += dailyProfit;
+    await newInstance.save();
+
+    user.activePlanInstance = newInstance._id;
+    await user.save();
+
+    await Transaction.create({
+        user: user._id, type: 'investment', amount: -renewalCost,
+        description: `Renovação do plano "${planToRenew.name}"`,
+    });
+    await Transaction.create({
+        user: user._id, type: 'collection', amount: dailyProfit,
+        description: 'Coleta inicial na renovação do plano',
+    });
+
+    res.status(200).json({ message: 'Plano renovado com sucesso!' });
+});
+
 
 //=====================================================
 //  FUNÇÕES DO LADO DO ADMIN
@@ -292,9 +348,10 @@ module.exports = {
     getAllAvailablePlans,
     activatePlan,
     collectDailyProfit,
+    upgradePlan,
+    renewPlan,
     getAllPlansForAdmin,
     createPlan,
     updatePlan,
     deletePlan,
-    upgradePlan,
 };
