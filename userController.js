@@ -1,6 +1,6 @@
 // userController.js
 const asyncHandler = require('express-async-handler');
-const { User, Transaction } = require('./models');
+const { User, Transaction, Banner } = require('./models'); // Adicionado Banner aqui
 const { generateToken } = require('./auth');
 const { generateUniqueUserId, generateInviteLink } = require('./utils');
 
@@ -15,7 +15,6 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('O PIN deve ter entre 4 e 6 dígitos.');
   }
 
-  // Gera um ID único e garante que ele não existe no banco de dados
   let newUserId;
   let userExists = true;
   while (userExists) {
@@ -28,24 +27,19 @@ const registerUser = asyncHandler(async (req, res) => {
       invitedByUser = await User.findOne({ userId: invitedById });
   }
 
-  // Cria o novo usuário
   const user = await User.create({
-    pin, // ATENÇÃO: Armazenando o PIN em texto puro, conforme solicitado.
+    pin,
     userId: newUserId,
     invitedBy: invitedByUser ? invitedByUser._id : null,
-    // O bônus de boas-vindas será adicionado como uma transação
   });
   
-  // Atualiza o link de convite do usuário
   user.inviteLink = generateInviteLink(user.userId);
   
-  // Adiciona o bônus de boas-vindas (Ex: 50MT)
   const welcomeBonusAmount = 50; // TODO: Obter este valor das configurações do admin
   user.bonusBalance += welcomeBonusAmount;
   
   await user.save();
 
-  // Cria a transação de bônus de boas-vindas
   await Transaction.create({
     user: user._id,
     type: 'welcome_bonus',
@@ -76,7 +70,6 @@ const loginUser = asyncHandler(async (req, res) => {
     throw new Error('Por favor, forneça o PIN.');
   }
 
-  // Encontra o usuário pelo PIN (comparação direta de texto puro)
   const user = await User.findOne({ pin });
 
   if (user) {
@@ -99,9 +92,52 @@ const loginUser = asyncHandler(async (req, res) => {
 // @route   GET /api/users/me
 // @access  Private
 const getUserProfile = asyncHandler(async (req, res) => {
-  // O middleware 'protectUser' já anexa o usuário ao 'req'
   const user = await User.findById(req.user._id).select('-pin');
   res.json(user);
+});
+
+// @desc    Obter dados agregados para o dashboard do usuário
+// @route   GET /api/users/dashboard
+// @access  Private
+const getDashboardData = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id)
+        .select('-pin')
+        .populate({
+            path: 'activePlanInstance',
+            populate: {
+                path: 'plan',
+                model: 'Plan'
+            }
+        });
+
+    if (!user) {
+        res.status(404);
+        throw new Error('Usuário não encontrado.');
+    }
+
+    let canCollect = false;
+    if (user.activePlanInstance) {
+        const instance = user.activePlanInstance;
+        // Se a data da última coleta não existe, o usuário pode coletar.
+        if (!instance.lastCollectedDate) {
+            canCollect = true;
+        } else {
+            // Se já se passaram 24 horas desde a última coleta.
+            const nextCollectionTime = new Date(instance.lastCollectedDate).getTime() + (24 * 60 * 60 * 1000);
+            if (Date.now() >= nextCollectionTime) {
+                canCollect = true;
+            }
+        }
+    }
+
+    // Obter banners ativos para exibir no topo do dashboard
+    const banners = await Banner.find({ isActive: true });
+
+    res.json({
+        user,
+        banners,
+        canCollect,
+    });
 });
 
 
@@ -117,7 +153,7 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
     }
 
     if (user) {
-        user.profilePicture = req.file.path; // URL segura do Cloudinary
+        user.profilePicture = req.file.path;
         await user.save();
         res.json({
             message: "Foto de perfil atualizada com sucesso.",
@@ -153,7 +189,7 @@ const createDepositRequest = asyncHandler(async (req, res) => {
         status: 'pending',
         description: `Requisição de depósito de ${amount} MT`,
         transactionDetails: {
-            proofImageUrl: req.file.path, // URL do comprovante no Cloudinary
+            proofImageUrl: req.file.path,
         }
     });
 
@@ -216,6 +252,7 @@ module.exports = {
   registerUser,
   loginUser,
   getUserProfile,
+  getDashboardData, // <-- A FUNÇÃO QUE FALTAVA AGORA ESTÁ SENDO EXPORTADA
   uploadProfilePicture,
   createDepositRequest,
   createWithdrawalRequest,
