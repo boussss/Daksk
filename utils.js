@@ -12,12 +12,18 @@ const generateUniqueUserId = () => {
 };
 
 /**
- * Cria o link de convite único para um usuário.
+ * Cria o link de convite único para um usuário, apontando para a página de registro.
  * @param {string} userId - O ID de 5 dígitos do usuário.
  * @returns {string} A URL completa de convite.
  */
 const generateInviteLink = (userId) => {
-  return `${config.baseUrl}?ref=${userId}`;
+  // Se a BASE_URL não estiver configurada, lança um erro para alertar o administrador.
+  if (!config.baseUrl) {
+    console.error("ERRO CRÍTICO: A variável BASE_URL não está definida no arquivo .env. Os links de convite não funcionarão.");
+    return `Erro: BASE_URL não configurada.`;
+  }
+  // Constrói a URL completa, garantindo que a página de registro seja incluída.
+  return `${config.baseUrl}/register.html?ref=${userId}`;
 };
 
 /**
@@ -34,5 +40,5 @@ const generateToken = (id) => {
 module.exports = {
   generateUniqueUserId,
   generateInviteLink,
-  generateToken, // Exporte a nova função
+  generateToken,
 };
