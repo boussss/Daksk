@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const config = require('./config');
-const { userRouter, planRouter, adminRouter } = require('./routes');
+const { userRouter, planRouter, adminRouter, settingsRouter } = require('./routes');
 const { Plan, Admin } = require('./models');
 
 // Inicializa a aplicação Express
@@ -13,7 +13,6 @@ const app = express();
 // --- Middlewares Essenciais ---
 
 // Habilita CORS para permitir que o frontend acesse a API.
-// Em produção, é recomendado restringir a origem: cors({ origin: 'https://sua-url-frontend.com' })
 app.use(cors());
 
 // Habilita o parsing de requisições com corpo no formato JSON.
@@ -40,6 +39,7 @@ const createDefaultPlan = async () => {
         dailyYieldType: 'fixed',
         dailyYieldValue: 25,
         durationDays: 45,
+        hashRate: "20/HS" // Adicionando um valor padrão para o novo campo
       });
       await defaultPlan.save();
       console.log('>>> Plano de investimento padrão criado com sucesso.');
@@ -108,6 +108,9 @@ app.use('/api/plans', planRouter);
 
 // As rotas de administração serão acessadas via /api/admin
 app.use('/api/admin', adminRouter);
+
+// As rotas de configurações públicas serão acessadas via /api/settings
+app.use('/api/settings', settingsRouter);
 
 // Rota raiz para uma verificação rápida de que a API está online
 app.get('/', (req, res) => {

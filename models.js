@@ -28,8 +28,7 @@ const PlanSchema = new mongoose.Schema({
   dailyYieldValue: { type: Number, required: true },
   durationDays: { type: Number, required: true },
   imageUrl: { type: String, default: '' },
-  // === NOVO CAMPO ADICIONADO ===
-  hashRate: { // Ex: "20/HS"
+  hashRate: {
     type: String, 
     default: 'N/A'
   },
@@ -55,7 +54,12 @@ const TransactionSchema = new mongoose.Schema({
   amount: { type: Number, required: true },
   status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved' },
   description: String,
-  transactionDetails: { type: Object },
+  transactionDetails: {
+    type: Object,
+    // Exemplos de conteúdo:
+    // Depósito: { proofType: 'image', proofUrl: 'url' } ou { proofType: 'text', proofText: 'sms...' }
+    // Saque: { destinationNumber: '84...', holderName: 'Nome do Titular', network: 'M-Pesa' }
+  },
   createdAt: { type: Date, default: Date.now },
 });
 
@@ -72,20 +76,19 @@ const BannerSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
 });
 
-// === NOVO MODELO DE CONFIGURAÇÕES ===
+// --- ESQUEMA DE CONFIGURAÇÕES ---
 const SettingsSchema = new mongoose.Schema({
-    // Usamos uma chave fixa para garantir que haja apenas um documento de configurações
     configKey: { type: String, default: "main_settings", unique: true }, 
     depositMethods: [{
         name: String, // Ex: "M-Pesa"
+        holderName: String, // Ex: "Nome do Titular"
         number: String, // Ex: "841234567"
         isActive: { type: Boolean, default: true }
     }],
     welcomeBonus: { type: Number, default: 50 },
-    referralCommissionRate: { type: Number, default: 15 }, // % da ativação do plano
-    dailyCommissionRate: { type: Number, default: 5 }, // % do lucro diário do convidado
+    referralCommissionRate: { type: Number, default: 15 },
+    dailyCommissionRate: { type: Number, default: 5 },
 });
-
 
 // Exportando todos os modelos
 const User = mongoose.model('User', UserSchema);
@@ -94,6 +97,6 @@ const PlanInstance = mongoose.model('PlanInstance', PlanInstanceSchema);
 const Transaction = mongoose.model('Transaction', TransactionSchema);
 const Admin = mongoose.model('Admin', AdminSchema);
 const Banner = mongoose.model('Banner', BannerSchema);
-const Settings = mongoose.model('Settings', SettingsSchema); // Exporta o novo modelo
+const Settings = mongoose.model('Settings', SettingsSchema);
 
 module.exports = { User, Plan, PlanInstance, Transaction, Admin, Banner, Settings };
