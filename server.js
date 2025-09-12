@@ -5,7 +5,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const config = require('./config');
 const { userRouter, planRouter, adminRouter, settingsRouter } = require('./routes');
-const { Plan, Admin } = require('./models');
+const { Admin } = require('./models'); // A importação de 'Plan' não é mais necessária aqui
 
 // Inicializa a aplicação Express
 const app = express();
@@ -23,31 +23,6 @@ app.use(express.urlencoded({ extended: true }));
 
 
 // --- Funções de Inicialização do Servidor ---
-
-/**
- * Verifica se algum plano de investimento existe no banco de dados.
- * Se não existir, cria o plano padrão "Investe 300MT".
- */
-const createDefaultPlan = async () => {
-  try {
-    const planExists = await Plan.findOne({ name: "Investe 300MT" });
-    if (!planExists) {
-      const defaultPlan = new Plan({
-        name: "Investe 300MT",
-        minAmount: 300,
-        maxAmount: 300,
-        dailyYieldType: 'fixed',
-        dailyYieldValue: 25,
-        durationDays: 45,
-        hashRate: "20/HS" // Adicionando um valor padrão para o novo campo
-      });
-      await defaultPlan.save();
-      console.log('>>> Plano de investimento padrão criado com sucesso.');
-    }
-  } catch (error) {
-    console.error('!!! Erro ao tentar criar o plano padrão:', error);
-  }
-};
 
 /**
  * Verifica se algum administrador existe no banco de dados.
@@ -86,8 +61,7 @@ const connectDB = async () => {
     await mongoose.connect(config.mongodbUri);
     console.log('✅ MongoDB conectado com sucesso.');
     
-    // Após conectar, executa as rotinas de inicialização
-    await createDefaultPlan();
+    // Após conectar, executa a rotina de inicialização do admin
     await createDefaultAdmin();
 
   } catch (err) {
