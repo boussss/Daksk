@@ -341,6 +341,15 @@ const getWalletSummary = asyncHandler(async (req, res) => {
     });
 });
 
+// --- FUNÇÃO RESTAURADA AQUI ---
+// @desc    Obter histórico de transações do usuário (para atividade recente)
+// @route   GET /api/users/transactions
+// @access  Private
+const getUserTransactions = asyncHandler(async (req, res) => {
+    const transactions = await Transaction.find({ user: req.user._id }).sort({ createdAt: -1 });
+    res.json(transactions);
+});
+
 module.exports = {
   registerUser,
   loginUser,
@@ -352,4 +361,5 @@ module.exports = {
   getReferralData,
   getWalletSummary,
   getHistoryData,
+  getUserTransactions, // --- GARANTIR QUE ESTÁ EXPORTADA ---
 };
