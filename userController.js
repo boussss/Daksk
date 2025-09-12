@@ -1,6 +1,6 @@
 // userController.js
 const asyncHandler = require('express-async-handler');
-const { User, Transaction, Plan, PlanInstance } = require('./models');
+const { User, Transaction, Plan, PlanInstance, Banner } = require('./models'); // ADICIONE 'Banner' AQUI
 const { generateToken, generateUniqueUserId, generateInviteLink } = require('./utils');
 
 // @desc    Cadastrar um novo usuário
@@ -120,12 +120,16 @@ const getUserProfile = asyncHandler(async (req, res) => {
 const getDashboardData = asyncHandler(async (req, res) => {
     const userId = req.user._id;
 
-    const user = await User.findById(userId)
-        .select('-pin')
-        .populate({
-            path: 'activePlanInstance',
-            populate: { path: 'plan', model: 'Plan' }
-        });
+    // --- CORREÇÃO AQUI: BUSCA OS BANNERS JUNTO COM OS OUTROS DADOS ---
+    const [user, banners] = await Promise.all([
+        User.findById(userId)
+            .select('-pin')
+            .populate({
+                path: 'activePlanInstance',
+                populate: { path: 'plan', model: 'Plan' }
+            }),
+        Banner.find({ isActive: true }) // Busca todos os banners que estão ativos
+    ]);
 
     if (!user) { res.status(404); throw new Error('Usuário não encontrado.'); }
 
@@ -157,8 +161,10 @@ const getDashboardData = asyncHandler(async (req, res) => {
         getProfitSum(new Date(0), new Date(), ['commission'])
     ]);
     
+    // --- CORREÇÃO AQUI: INCLUI OS BANNERS NA RESPOSTA ---
     res.json({ 
         user,
+        banners, // Adiciona a lista de banners na resposta para o front-end
         stats: {
             todayProfit,
             yesterdayProfit,
