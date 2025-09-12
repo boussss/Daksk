@@ -1,11 +1,10 @@
 // utils.js
-
+const jwt = require('jsonwebtoken');
 const config = require('./config');
 
 /**
  * Gera um ID numérico de 5 dígitos.
- * A unicidade deste ID deverá ser verificada na base de dados
- * no momento da criação do usuário.
+ * A unicidade será verificada no banco de dados.
  * @returns {number} Um número de 5 dígitos.
  */
 const generateUniqueUserId = () => {
@@ -18,13 +17,22 @@ const generateUniqueUserId = () => {
  * @returns {string} A URL completa de convite.
  */
 const generateInviteLink = (userId) => {
-  // Assumindo que a página de cadastro no seu HTML único terá um ID ou forma de ser acessada
-  // e que ela irá ler o parâmetro 'ref' da URL.
   return `${config.baseUrl}?ref=${userId}`;
 };
 
+/**
+ * Gera um token JWT para um ID de usuário ou admin.
+ * @param {string} id - O ID do documento do MongoDB.
+ * @returns {string} O token JWT.
+ */
+const generateToken = (id) => {
+  return jwt.sign({ id }, config.jwtSecret, {
+    expiresIn: '30d', // O token expira em 30 dias
+  });
+};
 
 module.exports = {
   generateUniqueUserId,
   generateInviteLink,
+  generateToken, // Exporte a nova função
 };

@@ -2,7 +2,8 @@
 const asyncHandler = require('express-async-handler');
 const bcrypt = require('bcryptjs');
 const { Admin, User, Transaction, PlanInstance, Banner } = require('./models');
-const { generateToken } = require('./auth');
+// CORREÇÃO: 'generateToken' agora vem de 'utils.js'.
+const { generateToken } = require('./utils');
 
 // @desc    Autenticar (login) o administrador
 // @route   POST /api/admin/login
@@ -207,10 +208,10 @@ const createBanner = asyncHandler(async (req, res) => {
 });
 
 // @desc    Deletar um banner
-// @route   DELETE /api/admin/banners/:bannerId
+// @route   DELETE /api/admin/banners/:id
 // @access  Admin
 const deleteBanner = asyncHandler(async (req, res) => {
-    const banner = await Banner.findById(req.params.bannerId);
+    const banner = await Banner.findById(req.params.id);
     if (!banner) {
         return res.status(404).json({ message: 'Banner não encontrado.' });
     }
