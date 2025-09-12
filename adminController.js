@@ -158,13 +158,17 @@ const approveWithdrawal = asyncHandler(async (req, res) => {
     }
 
     const user = await User.findById(transaction.user);
-    if (user.walletBalance < transaction.amount) {
+    
+    // O valor a ser deduzido já está calculado nos detalhes da transação
+    const totalDeducted = transaction.transactionDetails.totalDeducted;
+
+    if (user.walletBalance < totalDeducted) {
         transaction.status = 'rejected';
         await transaction.save();
         return res.status(400).json({ message: 'Saque rejeitado. Saldo do usuário é insuficiente.' });
     }
 
-    user.walletBalance -= transaction.amount;
+    user.walletBalance -= totalDeducted;
     await user.save();
 
     transaction.status = 'approved';
@@ -188,6 +192,14 @@ const rejectWithdrawal = asyncHandler(async (req, res) => {
 
 
 // --- GERENCIAMENTO DE BANNERS ---
+
+// @desc    Obter todos os banners
+// @route   GET /api/admin/banners
+// @access  Admin
+const getAllBanners = asyncHandler(async (req, res) => {
+    const banners = await Banner.find({}).sort({ _id: -1 }); // Mais recentes primeiro
+    res.json(banners);
+});
 
 // @desc    Criar um novo banner
 // @route   POST /api/admin/banners
@@ -225,12 +237,9 @@ const deleteBanner = asyncHandler(async (req, res) => {
 // @access  Admin
 const getSettings = asyncHandler(async (req, res) => {
     let settings = await Settings.findOne({ configKey: "main_settings" });
-
-    // Se nenhuma configuração for encontrada, cria um documento padrão
     if (!settings) {
         settings = await Settings.create({ configKey: "main_settings" });
     }
-
     res.json(settings);
 });
 
@@ -241,7 +250,7 @@ const updateSettings = asyncHandler(async (req, res) => {
     const updatedSettings = await Settings.findOneAndUpdate(
         { configKey: "main_settings" },
         req.body,
-        { new: true, upsert: true } // 'upsert: true' cria o documento se ele não existir
+        { new: true, upsert: true }
     );
     res.json(updatedSettings);
 });
@@ -260,6 +269,7 @@ module.exports = {
     getPendingWithdrawals,
     approveWithdrawal,
     rejectWithdrawal,
+    getAllBanners,
     createBanner,
     deleteBanner,
     getSettings,

@@ -32,7 +32,7 @@ userRouter.get('/wallet-summary', protectUser, userController.getWalletSummary);
 
 // --- Rotas de Histórico ---
 userRouter.get('/history', protectUser, userController.getHistoryData);
-userRouter.get('/transactions', protectUser, userController.getUserTransactions); // --- ROTA RESTAURADA AQUI ---
+userRouter.get('/transactions', protectUser, userController.getUserTransactions);
 
 // --- Transações do Usuário (Ações) ---
 userRouter.post('/deposit', protectUser, uploadDepositProof.single('proof'), userController.createDepositRequest);
@@ -89,6 +89,7 @@ adminRouter.post('/withdrawals/:transactionId/approve', protectAdmin, adminContr
 adminRouter.post('/withdrawals/:transactionId/reject', protectAdmin, adminController.rejectWithdrawal);
 
 // --- Gerenciamento de Banners ---
+adminRouter.get('/banners', protectAdmin, adminController.getAllBanners); // --- ROTA ADICIONADA AQUI ---
 adminRouter.post('/banners', protectAdmin, uploadBanner.single('image'), adminController.createBanner);
 adminRouter.delete('/banners/:id', protectAdmin, adminController.deleteBanner);
 
