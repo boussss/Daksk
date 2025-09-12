@@ -1,8 +1,7 @@
 // adminController.js
 const asyncHandler = require('express-async-handler');
 const bcrypt = require('bcryptjs');
-const { Admin, User, Transaction, PlanInstance, Banner } = require('./models');
-// CORREÇÃO: 'generateToken' agora vem de 'utils.js'.
+const { Admin, User, Transaction, PlanInstance, Banner, Settings } = require('./models');
 const { generateToken } = require('./utils');
 
 // @desc    Autenticar (login) o administrador
@@ -219,6 +218,34 @@ const deleteBanner = asyncHandler(async (req, res) => {
     res.json({ message: 'Banner deletado com sucesso.' });
 });
 
+// --- GERENCIAMENTO DE CONFIGURAÇÕES ---
+
+// @desc    Obter as configurações do site
+// @route   GET /api/admin/settings
+// @access  Admin
+const getSettings = asyncHandler(async (req, res) => {
+    let settings = await Settings.findOne({ configKey: "main_settings" });
+
+    // Se nenhuma configuração for encontrada, cria um documento padrão
+    if (!settings) {
+        settings = await Settings.create({ configKey: "main_settings" });
+    }
+
+    res.json(settings);
+});
+
+// @desc    Atualizar as configurações do site
+// @route   PUT /api/admin/settings
+// @access  Admin
+const updateSettings = asyncHandler(async (req, res) => {
+    const updatedSettings = await Settings.findOneAndUpdate(
+        { configKey: "main_settings" },
+        req.body,
+        { new: true, upsert: true } // 'upsert: true' cria o documento se ele não existir
+    );
+    res.json(updatedSettings);
+});
+
 
 module.exports = {
     loginAdmin,
@@ -235,4 +262,6 @@ module.exports = {
     rejectWithdrawal,
     createBanner,
     deleteBanner,
+    getSettings,
+    updateSettings,
 };
