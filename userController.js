@@ -170,15 +170,49 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
 // @route   POST /api/users/deposit
 // @access  Private
 const createDepositRequest = asyncHandler(async (req, res) => {
-    const { amount } = req.body;
-    if (!amount || amount <= 0) { res.status(400); throw new Error("O valor do depósito deve ser maior que zero."); }
-    if (!req.file) { res.status(400); throw new Error("O comprovativo de depósito é obrigatório."); }
+    // proofText virá do corpo se for um SMS
+    const { amount, proofText } = req.body; 
+
+    if (!amount || amount <= 0) { 
+        res.status(400); 
+        throw new Error("O valor do depósito deve ser maior que zero."); 
+    }
+
+    // Verifica se pelo menos um tipo de comprovativo foi enviado
+    if (!req.file && !proofText) {
+        res.status(400);
+        throw new Error("O comprovativo de depósito (imagem ou texto) é obrigatório.");
+    }
+
+    // Prepara os detalhes da transação com base no tipo de comprovativo
+    let transactionDetails = {};
+    if (req.file) {
+        // Se for uma imagem, salva a URL
+        transactionDetails = { 
+            proofType: 'image',
+            proofImageUrl: req.file.path 
+        };
+    } else {
+        // Se for texto, salva o texto
+        transactionDetails = { 
+            proofType: 'text',
+            proofText: proofText 
+        };
+    }
+    
     const depositTransaction = await Transaction.create({
-        user: req.user._id, type: 'deposit', amount: Number(amount), status: 'pending',
+        user: req.user._id, 
+        type: 'deposit', 
+        amount: Number(amount), 
+        status: 'pending',
         description: `Requisição de depósito de ${amount} MT`,
-        transactionDetails: { proofImageUrl: req.file.path }
+        transactionDetails: transactionDetails // Usa o objeto que criamos
     });
-    res.status(201).json({ message: "Requisição de depósito enviada com sucesso. Aguardando aprovação.", transaction: depositTransaction });
+    
+    res.status(201).json({ 
+        message: "Requisição de depósito enviada com sucesso. Aguardando aprovação.", 
+        transaction: depositTransaction 
+    });
 });
 
 // @desc    Criar uma requisição de saque
