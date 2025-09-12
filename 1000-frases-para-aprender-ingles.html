@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1000 Frases para Você Dominar o Inglês - Fale com Confiança</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Iconify Script (para Solar Icons) -->
+    <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+
+    <!-- Plyr.js CSS (Player de Vídeo) -->
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+
+    <style>
+        /* CSS Embutido */
+        
+        :root {
+            --primary-color: #0d47a1;
+            --secondary-color: #1565c0;
+            --accent-color: #ffa000;
+            --accent-color-dark: #ff8f00;
+            --text-color: #212121;
+            --text-light: #5f6368;
+            --background-color: #ffffff;
+            --section-bg-color: #f7f9fc;
+            --white-color: #ffffff;
+            --whatsapp-green: #25D366;
+            --header-font: 'Montserrat', sans-serif;
+            --body-font: 'Poppins', sans-serif;
+        }
+
+        /* AJUSTE GLOBAL DE TAMANHO (-10%) */
+        html { font-size: 14.5px; }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; scroll-behavior: smooth; }
+        body { font-family: var(--body-font); color: var(--text-color); background-color: var(--background-color); line-height: 1.6; overflow-x: hidden; }
+        .container { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
+        h1, h2, h3 { font-family: var(--header-font); font-weight: 800; color: var(--primary-color); line-height: 1.2; }
+        h2 { text-align: center; font-size: 2.2rem; margin-bottom: 20px; position: relative; }
+        h2::after { content: ''; display: block; width: 70px; height: 4px; background-color: var(--accent-color); margin: 18px auto 0; border-radius: 2px; }
+        section { padding: 80px 0; position: relative; }
+        .section-bg { background-color: var(--section-bg-color); }
+
+        /* --- Seção Principal (Hero) --- */
+        .hero { background: linear-gradient(rgba(13, 71, 161, 0.9), rgba(13, 71, 161, 0.9)), url('imagem_fundo_abstrata.jpg') no-repeat center center/cover; background-attachment: fixed; color: var(--white-color); text-align: center; padding: 90px 20px 50px; }
+        .hero h1 { font-size: 2.9rem; margin-bottom: 18px; color: var(--white-color); text-shadow: 2px 2px 5px rgba(0,0,0,0.3); }
+        .hero p { font-size: 1.15rem; max-width: 700px; margin: 0 auto 25px auto; font-weight: 400; }
+
+        /* --- Player de Vídeo Plyr.js --- */
+        .video-container { max-width: 900px; margin: 25px auto 35px; box-shadow: 0 12px 35px rgba(0, 0, 0, 0.3); border-radius: 12px; overflow: hidden; border: 3px solid var(--white-color); }
+        :root { --plyr-color-main: var(--accent-color); }
+
+        /* --- Botão CTA com Animação --- */
+        .cta-button { display: inline-block; background: linear-gradient(45deg, var(--accent-color), var(--accent-color-dark)); color: var(--white-color); padding: 16px 36px; font-size: 1rem; font-weight: 700; font-family: var(--header-font); text-decoration: none; border-radius: 50px; transition: transform 0.3s ease, box-shadow 0.3s ease; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2); text-transform: uppercase; }
+        .cta-button:hover { transform: translateY(-4px) scale(1.05); box-shadow: 0 7px 22px rgba(0, 0, 0, 0.3); }
+
+        /* --- Seção "Você se identifica?" --- */
+        .pain-points-layout { display: grid; grid-template-columns: 1.2fr 1fr; align-items: center; gap: 40px; }
+        .pain-points-grid { display: grid; gap: 18px; }
+        .pain-point-item { display: flex; align-items: center; background: var(--white-color); padding: 12px 18px; border-radius: 10px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.05); transition: all 0.3s ease; }
+        .pain-point-item:hover { transform: translateX(8px); box-shadow: 0 7px 22px rgba(0, 0, 0, 0.08); }
+        .pain-point-item .icon-bubble { width: 45px; height: 45px; border-radius: 50%; background: var(--accent-color); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-right: 15px; }
+        .pain-point-item .icon-bubble iconify-icon { font-size: 1.6rem; color: var(--white-color); }
+        .pain-point-item p { color: var(--text-light); font-size: 0.95rem; }
+        .pain-image-container img { max-width: 100%; border-radius: 12px; }
+        
+        /* --- Seção de Benefícios (Cards) --- */
+        .benefits-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 25px; }
+        .benefit-card { background-color: var(--white-color); padding: 30px; border-radius: 12px; text-align: center; box-shadow: 0 8px 25px rgba(0, 0, 0, 0.07); transition: transform 0.3s ease, box-shadow 0.3s ease; }
+        .benefit-card:hover { transform: translateY(-7px); box-shadow: 0 12px 35px rgba(0, 0, 0, 0.1); }
+        .benefit-card .icon-wrapper { width: 70px; height: 70px; margin: 0 auto 20px auto; border-radius: 50%; background: linear-gradient(45deg, var(--primary-color), var(--secondary-color)); display: flex; align-items: center; justify-content: center; color: var(--white-color); }
+        .benefit-card iconify-icon { font-size: 2.5rem; }
+        .benefit-card h3 { font-size: 1.3rem; margin-bottom: 8px; }
+
+        /* --- Seção "O Que Você Encontrará" - Redesenhada --- */
+        #whats-inside .container { text-align: center; }
+        .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 25px; text-align: left; margin-top: 40px; }
+        .feature-card { background: var(--white-color); padding: 25px; border-radius: 12px; box-shadow: 0 8px 25px rgba(0,0,0,0.05); transition: all 0.3s ease; }
+        .feature-card:hover { transform: translateY(-7px); box-shadow: 0 12px 35px rgba(0,0,0,0.1); }
+        .feature-card .icon { font-size: 2.2rem; color: var(--primary-color); margin-bottom: 12px; }
+        .feature-card h3 { font-size: 1.2rem; margin-bottom: 8px; }
+        
+        /* --- Seção Bônus --- */
+        #bonus { background: linear-gradient(45deg, var(--primary-color), var(--secondary-color)); }
+        #bonus h2, #bonus h3 { color: var(--white-color); }
+        .bonus-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 25px; }
+        .bonus-card { background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); color: var(--white-color); padding: 25px; border-radius: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.2); }
+        .bonus-card .icon { font-size: 3rem; color: var(--accent-color); margin-bottom: 12px; }
+
+        /* --- Seção Depoimentos --- */
+        .testimonials-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 25px; }
+        .testimonial-card { background-color: var(--white-color); padding: 25px; border-radius: 12px; border-top: 4px solid var(--accent-color); box-shadow: 0 8px 25px rgba(0, 0, 0, 0.07); }
+        .testimonial-header { display: flex; align-items: center; margin-bottom: 15px; }
+        .testimonial-header img { width: 50px; height: 50px; border-radius: 50%; margin-right: 12px; border: 2px solid var(--accent-color); object-fit: cover;}
+        .testimonial-author-info .author-name { font-weight: 700; color: var(--primary-color); }
+        .testimonial-author-info .author-title { font-size: 0.85rem; color: var(--text-light); }
+        .testimonial-card p.quote { font-style: italic; color: var(--text-light); }
+
+        /* --- Seção CTA Final --- */
+        #cta-final { text-align: center; color: var(--white-color); background: linear-gradient(rgba(21, 101, 192, 0.95), rgba(21, 101, 192, 0.95)), url('imagem_fundo_cta.jpg') no-repeat center center/cover; background-attachment: fixed; }
+        #cta-final h2 { color: var(--white-color); }
+        .cta-ebook-cover { max-width: 220px; max-height: 270px; object-fit: contain; display: block; margin: 0 auto 25px auto; border-radius: 8px; box-shadow: 0 8px 25px rgba(0,0,0,0.2); }
+        .price-box { margin-bottom: 25px; }
+        .price-box .old-price { font-size: 1.3rem; text-decoration: line-through; opacity: 0.7; }
+        .price-box .new-price { display: block; font-size: 3rem; font-weight: 800; color: var(--accent-color); font-family: var(--header-font); }
+
+        /* --- Modal de Fim de Vídeo --- */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; display: flex; align-items: center; justify-content: center; opacity: 0; visibility: hidden; transition: opacity 0.3s ease, visibility 0.3s ease; }
+        .modal-overlay.visible { opacity: 1; visibility: visible; }
+        .modal-content { background: var(--white-color); padding: 35px; border-radius: 12px; text-align: center; max-width: 450px; width: 90%; position: relative; transform: scale(0.9); transition: transform 0.3s ease; }
+        .modal-overlay.visible .modal-content { transform: scale(1); }
+        .modal-image { max-width: 100%; max-height: 180px; object-fit: contain; height: auto; border-radius: 8px; margin-bottom: 18px; }
+        .modal-content h3 { font-size: 1.6rem; margin-bottom: 12px; }
+        .modal-content p { margin-bottom: 25px; color: var(--text-light); }
+        .modal-close { position: absolute; top: 12px; right: 12px; font-size: 1.8rem; color: #aaa; cursor: pointer; line-height: 1; transition: color 0.2s ease; }
+        .modal-close:hover { color: var(--text-color); }
+
+        /* --- Animações e Outros --- */
+        .whatsapp-float { position: fixed; width: 55px; height: 55px; bottom: 25px; right: 25px; background-color: var(--whatsapp-green); color: var(--white-color); border-radius: 50px; text-align: center; box-shadow: 2px 2px 8px rgba(0,0,0,0.25); z-index: 1000; display: flex; justify-content: center; align-items: center; text-decoration: none; transition: transform 0.2s ease; }
+        .whatsapp-float iconify-icon { font-size: 1.8rem; }
+        .whatsapp-float:hover { transform: scale(1.1); }
+        footer { background-color: var(--text-color); color: var(--white-color); text-align: center; padding: 25px 20px; }
+        .animate-on-scroll { opacity: 0; transform: translateY(30px); transition: opacity 0.6s ease-out, transform 0.6s ease-out; }
+        .animate-on-scroll.visible { opacity: 1; transform: translateY(0); }
+        @media (max-width: 992px) { .pain-points-layout { grid-template-columns: 1fr; } .pain-image-container { display: none; } }
+        @media (max-width: 768px) { h1 { font-size: 2.2rem; } h2 { font-size: 1.8rem; } section { padding: 50px 0; } .hero p { font-size: 1rem; } .whatsapp-float { width: 50px; height: 50px; bottom: 20px; right: 20px; } }
+    </style>
+</head>
+<body>
+
+    <header class="hero">
+        <div class="container">
+            <h1>Fale Inglês com Confiança em Qualquer Situação</h1>
+            <p>Com o método das 1000 frases essenciais, você vai destravar sua fala e entender o inglês do dia a dia de forma rápida e definitiva.</p>
+            <div class="video-container animate-on-scroll">
+                <video id="player" playsinline controls poster="poster_video.jpg">
+                    <source src="video.mp4" type="video/mp4" />
+                </video>
+            </div>
+            <a href="#cta-final" class="cta-button">Quero Falar Inglês Agora!</a>
+        </div>
+    </header>
+
+    <main>
+        <section id="pain-points">
+            <div class="container">
+                <div class="pain-points-layout">
+                    <div class="pain-points-content animate-on-scroll">
+                        <h2 style="text-align: left; margin-bottom: 30px;">Você se identifica?</h2>
+                        <div class="pain-points-grid">
+                            <div class="pain-point-item">
+                                <div class="icon-bubble"><iconify-icon icon="solar:close-circle-bold-duotone"></iconify-icon></div>
+                                <p>Sente que estuda, mas na hora de falar, as palavras simplesmente somem?</p>
+                            </div>
+                            <div class="pain-point-item">
+                                <div class="icon-bubble"><iconify-icon icon="solar:close-circle-bold-duotone"></iconify-icon></div>
+                                <p>Já perdeu uma oportunidade por não ter confiança no seu inglês?</p>
+                            </div>
+                            <div class="pain-point-item">
+                                <div class="icon-bubble"><iconify-icon icon="solar:close-circle-bold-duotone"></iconify-icon></div>
+                                <p>Cansado de regras gramaticais complexas que mais confundem do que ajudam?</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="pain-image-container animate-on-scroll">
+                        <img src="imagem_pessoa_pensativa.jpg" alt="Pessoa pensando sobre aprender inglês">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="benefits" class="section-bg">
+            <div class="container">
+                <h2>O Fim da Frustração. Com este Ebook, Você Vai:</h2>
+                <div class="benefits-grid">
+                    <div class="benefit-card animate-on-scroll"> <div class="icon-wrapper"><iconify-icon icon="solar:rocket-bold-duotone"></iconify-icon></div> <h3>Ter uma Comunicação Imediata</h3> <p>Aprenda estruturas prontas para usar em situações reais, acelerando drasticamente seu poder de comunicação.</p> </div>
+                    <div class="benefit-card animate-on-scroll" style="transition-delay: 0.2s;"> <div class="icon-wrapper"><iconify-icon icon="solar:chat-round-like-bold-duotone"></iconify-icon></div> <h3>Construir Confiança Inabalável</h3> <p>Domine o que dizer em dezenas de cenários, eliminando o medo de errar e aumentando sua segurança para conversar.</p> </div>
+                    <div class="benefit-card animate-on-scroll" style="transition-delay: 0.4s;"> <div class="icon-wrapper"><iconify-icon icon="solar:map-arrow-right-bold-duotone"></iconify-icon></div> <h3>Conectar-se com o Mundo</h3> <p>Seja para viagens, negócios ou lazer, tenha em mãos as frases que abrem portas e criam conexões globais.</p> </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="whats-inside">
+            <div class="container">
+                <h2>O Que Você Encontrará no Ebook</h2>
+                <div class="features-grid">
+                    <div class="feature-card animate-on-scroll"> <iconify-icon class="icon" icon="solar:file-text-bold-duotone"></iconify-icon> <h3>PDF Digital e Interativo</h3> <p>Acesse de qualquer dispositivo a qualquer hora. Estude no seu ritmo, onde quer que esteja.</p> </div>
+                    <div class="feature-card animate-on-scroll" style="transition-delay: 0.2s;"> <iconify-icon class="icon" icon="solar:server-square-bold-duotone"></iconify-icon> <h3>Organização Inteligente</h3> <p>Frases divididas por categorias como Viagens, Trabalho e Social, para consulta rápida e prática.</p> </div>
+                    <div class="feature-card animate-on-scroll" style="transition-delay: 0.4s;"> <iconify-icon class="icon" icon="solar:subtitles-bold-duotone"></iconify-icon> <h3>Tradução e Contexto</h3> <p>Todas as frases com tradução e dicas de quando e como usá-las para soar como um nativo.</p> </div>
+                </div>
+            </div>
+        </section>
+        
+        <section id="bonus">
+            <div class="container">
+                <h2>E não é só isso! Receba 3 Bônus Exclusivos:</h2>
+                <div class="bonus-grid">
+                    <div class="bonus-card animate-on-scroll"> <iconify-icon class="icon" icon="solar:lightbulb-bolt-bold-duotone"></iconify-icon> <h3>Guia de Técnicas de Fluência</h3> <p>Um manual prático com técnicas para praticar sua fala, melhorar sua pronúncia e acelerar a memorização.</p> </div>
+                    <div class="bonus-card animate-on-scroll" style="transition-delay: 0.2s;"> <iconify-icon class="icon" icon="solar:headphones-round-sound-bold-duotone"></iconify-icon> <h3>Lista Secreta de Podcasts</h3> <p>Uma curadoria dos melhores podcasts para você treinar sua escuta com conteúdo real e interessante.</p> </div>
+                    <div class="bonus-card animate-on-scroll" style="transition-delay: 0.4s;"> <iconify-icon class="icon" icon="solar:users-group-rounded-bold-duotone"></iconify-icon> <h3>Comunidade de Alunos</h3> <p>Acesso a um grupo exclusivo para tirar dúvidas, praticar com colegas e receber dicas extras.</p> </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="testimonials" class="section-bg">
+            <div class="container">
+                <h2>O que nossos leitores dizem</h2>
+                <div class="testimonials-grid">
+                    <div class="testimonial-card animate-on-scroll"> <div class="testimonial-header"> <img src="ssu488ssu488ssu4.png" alt="Foto depoimento"> <div><p class="author-name">Joana S.</p><p class="author-title">Gerente de Projetos</p></div> </div> <p class="quote">"Finalmente um material prático! Em uma semana, já me sentia mais confiante para participar das reuniões em inglês. Mudou o jogo para mim."</p> </div>
+                    <div class="testimonial-card animate-on-scroll" style="transition-delay: 0.2s;"> <div class="testimonial-header"> <img src="ifofrifofrifofri.png" alt="Foto depoimento"> <div><p class="author-name">Mariana C.</p><p class="author-title">Estudante de Intercâmbio</p></div> </div> <p class="quote">"Usei o ebook na minha viagem e foi incrível! Consegui me comunicar em tudo sem problemas. Os bônus de podcasts são excelentes!"</p> </div>
+                    <div class="testimonial-card animate-on-scroll" style="transition-delay: 0.4s;"> <div class="testimonial-header"> <img src="pxodfdpxodfdpxod.png" alt="Foto depoimento"> <div><p class="author-name">Pedro L.</p><p class="author-title">Desenvolvedor de Software</p></div> </div> <p class="quote">"Esqueça os apps que só ensinam palavras soltas. Este ebook te dá as frases completas que você realmente precisa. É o melhor atalho para a fluência."</p> </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="cta-final">
+            <div class="container">
+                <h2>Sua Jornada para a Fluência Começa Agora.</h2>
+                <img src="ebook.png" alt="Capa do Ebook 1000 Frases" class="cta-ebook-cover animate-on-scroll">
+                <div class="price-box"> <p>Oferta especial de lançamento! De <span class="old-price">500 MZN</span> por apenas:</p> <span class="new-price">350 MZN</span> </div>
+                <a href="https://nhonga.net/sales/pay/diigeiz5md4j" class="cta-button">Sim, Quero Falar Inglês com Desconto!</a>
+                <p style="font-size: 0.85rem; margin-top: 15px; opacity: 0.8;">Acesso imediato e vitalício. Compra 100% segura.</p>
+            </div>
+        </section>
+    </main>
+    
+    <a href="https://wa.me/258879573872?text=Olá! Tenho interesse no ebook de 1000 frases em inglês." class="whatsapp-float" target="_blank" rel="noopener noreferrer" aria-label="Fale Conosco no WhatsApp">
+        <iconify-icon icon="logos:whatsapp-icon"></iconify-icon>
+    </a>
+
+    <footer>
+        <div class="container"> <p>&copy; 2025 | 1000 Frases para Você Dominar o Inglês | Todos os direitos reservados.</p> </div>
+    </footer>
+
+    <!-- Modal de Fim de Vídeo -->
+    <div class="modal-overlay" id="video-end-modal">
+        <div class="modal-content">
+            <span class="modal-close" id="modal-close-button">&times;</span>
+            <img src="64.png" alt="Capa do Ebook" class="modal-image">
+            <h3>Gostou da prévia?</h3>
+            <p>Continue sua jornada para a fluência agora mesmo. Adquira o ebook completo com as 1000 frases e todos os bônus com um desconto especial!</p>
+            <a href="https://nhonga.net/sales/pay/09r5yg42yql9" class="cta-button">Comprar Ebook Agora!</a>
+        </div>
+    </div>
+
+    <!-- Plyr.js SCRIPT -->
+    <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+    
+    <!-- SCRIPTS FINAIS -->
+    <script>
+        const player = new Plyr('#player');
+        const modal = document.getElementById('video-end-modal');
+        const closeModalButton = document.getElementById('modal-close-button');
+
+        player.on('ended', event => { 
+            modal.classList.add('visible');
+        });
+
+        closeModalButton.addEventListener('click', () => { modal.classList.remove('visible'); });
+        modal.addEventListener('click', (event) => { if (event.target === modal) { modal.classList.remove('visible'); } });
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => { if (entry.isIntersecting) { entry.target.classList.add('visible'); } });
+        }, { threshold: 0.1 });
+        const elementsToAnimate = document.querySelectorAll('.animate-on-scroll');
+        elementsToAnimate.forEach((el) => observer.observe(el));
+    </script>
+
+</body>
+</html>
