@@ -28,10 +28,10 @@ userRouter.post('/login', userController.loginUser);
 userRouter.get('/me', protectUser, userController.getUserProfile);
 userRouter.get('/dashboard', protectUser, userController.getDashboardData);
 userRouter.post('/profile/picture', protectUser, uploadProfilePic.single('image'), userController.uploadProfilePicture);
-userRouter.get('/wallet-summary', protectUser, userController.getWalletSummary);
+userRouter.get('/wallet-summary', protectUser, userController.getWalletSummary); // --- ROTA ADICIONADA AQUI ---
 
 // --- Rotas de Histórico (Unificadas) ---
-userRouter.get('/history', protectUser, userController.getHistoryData); // --- ROTA UNIFICADA PARA TODO O HISTÓRICO ---
+userRouter.get('/history', protectUser, userController.getHistoryData);
 
 // --- Transações do Usuário (Ações) ---
 userRouter.post('/deposit', protectUser, uploadDepositProof.single('proof'), userController.createDepositRequest);

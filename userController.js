@@ -289,6 +289,21 @@ const getReferralData = asyncHandler(async (req, res) => {
     });
 });
 
+// @desc    Obter histórico de planos e de transações do usuário
+// @route   GET /api/users/history
+// @access  Private
+const getHistoryData = asyncHandler(async (req, res) => {
+    const [planInstances, transactions] = await Promise.all([
+        PlanInstance.find({ user: req.user._id })
+            .populate('plan', 'name')
+            .sort({ startDate: -1 }),
+        Transaction.find({ user: req.user._id })
+            .sort({ createdAt: -1 })
+    ]);
+
+    res.status(200).json({ planInstances, transactions });
+});
+
 // @desc    Obter um resumo estatístico da carteira
 // @route   GET /api/users/wallet-summary
 // @access  Private
@@ -324,21 +339,6 @@ const getWalletSummary = asyncHandler(async (req, res) => {
         totalWithdrawn,
         totalProfit
     });
-});
-
-// @desc    Obter histórico de planos e de transações do usuário
-// @route   GET /api/users/history
-// @access  Private
-const getHistoryData = asyncHandler(async (req, res) => {
-    const [planInstances, transactions] = await Promise.all([
-        PlanInstance.find({ user: req.user._id })
-            .populate('plan', 'name')
-            .sort({ startDate: -1 }),
-        Transaction.find({ user: req.user._id })
-            .sort({ createdAt: -1 })
-    ]);
-
-    res.status(200).json({ planInstances, transactions });
 });
 
 module.exports = {
