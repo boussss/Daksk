@@ -186,11 +186,20 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
 // @route   POST /api/users/deposit
 // @access  Private
 const createDepositRequest = asyncHandler(async (req, res) => {
-    const { amount, proofText } = req.body; 
+    const DEPOSIT_MIN = 50;
+    const DEPOSIT_MAX = 25000;
+    
+    const { amount, proofText } = req.body;
+    const depositAmount = Number(amount);
 
-    if (!amount || amount <= 0) { 
+    if (!depositAmount || depositAmount <= 0) { 
         res.status(400); 
         throw new Error("O valor do depósito deve ser maior que zero."); 
+    }
+    
+    if (depositAmount < DEPOSIT_MIN || depositAmount > DEPOSIT_MAX) {
+        res.status(400);
+        throw new Error(`O valor do depósito deve estar entre ${DEPOSIT_MIN} MT e ${DEPOSIT_MAX} MT.`);
     }
 
     if (!req.file && !proofText) {
@@ -214,9 +223,9 @@ const createDepositRequest = asyncHandler(async (req, res) => {
     const depositTransaction = await Transaction.create({
         user: req.user._id, 
         type: 'deposit', 
-        amount: Number(amount), 
+        amount: depositAmount,
         status: 'pending',
-        description: `Requisição de depósito de ${amount} MT`,
+        description: `Requisição de depósito de ${depositAmount.toFixed(2)} MT`,
         transactionDetails: transactionDetails
     });
     
@@ -230,17 +239,54 @@ const createDepositRequest = asyncHandler(async (req, res) => {
 // @route   POST /api/users/withdraw
 // @access  Private
 const createWithdrawalRequest = asyncHandler(async (req, res) => {
+    const WITHDRAWAL_MIN = 100;
+    const WITHDRAWAL_MAX = 25000;
+    const WITHDRAWAL_FEE_PERCENTAGE = 3;
+
     const { amount, paymentNumber } = req.body;
     const user = req.user;
-    if (!user.hasDeposited) { res.status(403); throw new Error("Você precisa ter um depósito aprovado para poder sacar."); }
-    if (!amount || !paymentNumber) { res.status(400); throw new Error("Valor e número para pagamento são obrigatórios."); }
-    if (Number(amount) > user.walletBalance) { res.status(400); throw new Error("Saldo insuficiente. Você não pode sacar mais do que o seu saldo real."); }
+    const withdrawalAmount = Number(amount);
+    
+    if (!withdrawalAmount || !paymentNumber) { 
+        res.status(400); 
+        throw new Error("Valor e número para pagamento são obrigatórios."); 
+    }
+    
+    if (withdrawalAmount < WITHDRAWAL_MIN || withdrawalAmount > WITHDRAWAL_MAX) {
+        res.status(400);
+        throw new Error(`O valor do saque deve estar entre ${WITHDRAWAL_MIN} MT e ${WITHDRAWAL_MAX} MT.`);
+    }
+
+    if (!user.hasDeposited) { 
+        res.status(403); 
+        throw new Error("Você precisa ter um depósito aprovado para poder sacar."); 
+    }
+    
+    const fee = (withdrawalAmount * WITHDRAWAL_FEE_PERCENTAGE) / 100;
+    const totalDeducted = withdrawalAmount + fee;
+    
+    if (totalDeducted > user.walletBalance) { 
+        res.status(400); 
+        throw new Error(`Saldo insuficiente. Você precisa de ${totalDeducted.toFixed(2)} MT para sacar ${withdrawalAmount.toFixed(2)} MT (incluindo taxa de ${fee.toFixed(2)} MT).`); 
+    }
+    
     const withdrawalTransaction = await Transaction.create({
-        user: user._id, type: 'withdrawal', amount: Number(amount), status: 'pending',
-        description: `Requisição de saque de ${amount} MT`,
-        transactionDetails: { destinationNumber: paymentNumber }
+        user: user._id, 
+        type: 'withdrawal', 
+        amount: -withdrawalAmount,
+        status: 'pending',
+        description: `Saque de ${withdrawalAmount.toFixed(2)} MT`,
+        transactionDetails: { 
+            destinationNumber: paymentNumber,
+            fee: fee,
+            totalDeducted: totalDeducted 
+        }
     });
-    res.status(201).json({ message: "Requisição de saque enviada com sucesso. Aguardando aprovação.", transaction: withdrawalTransaction });
+
+    res.status(201).json({ 
+        message: "Requisição de saque enviada com sucesso. Aguardando aprovação.", 
+        transaction: withdrawalTransaction 
+    });
 });
 
 // @desc    Obter dados de referência do usuário
@@ -341,7 +387,6 @@ const getWalletSummary = asyncHandler(async (req, res) => {
     });
 });
 
-// --- FUNÇÃO RESTAURADA AQUI ---
 // @desc    Obter histórico de transações do usuário (para atividade recente)
 // @route   GET /api/users/transactions
 // @access  Private
@@ -361,5 +406,5 @@ module.exports = {
   getReferralData,
   getWalletSummary,
   getHistoryData,
-  getUserTransactions, // --- GARANTIR QUE ESTÁ EXPORTADA ---
+  getUserTransactions,
 };

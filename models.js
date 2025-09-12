@@ -58,7 +58,7 @@ const TransactionSchema = new mongoose.Schema({
     type: Object,
     // Exemplos de conteúdo:
     // Depósito: { proofType: 'image', proofUrl: 'url' } ou { proofType: 'text', proofText: 'sms...' }
-    // Saque: { destinationNumber: '84...', holderName: 'Nome do Titular', network: 'M-Pesa' }
+    // Saque: { destinationNumber: '84...', fee: 30, totalDeducted: 1030 } // <-- ATUALIZAÇÃO AQUI
   },
   createdAt: { type: Date, default: Date.now },
 });
