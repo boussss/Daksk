@@ -1,16 +1,33 @@
 // userController.js
 const asyncHandler = require('express-async-handler');
 const { User, Transaction, Banner } = require('./models');
-// CORREÇÃO: 'generateToken' agora vem de 'utils.js' para quebrar a dependência circular.
 const { generateToken, generateUniqueUserId, generateInviteLink } = require('./utils');
 
 // @desc    Cadastrar um novo usuário
 // @route   POST /api/users/register
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
-  const { pin, invitedById } = req.body;
+  // Desestrutura os novos campos do corpo da requisição
+  const { name, username, phone, pin, invitedById } = req.body;
 
-  if (!pin || pin.length < 4 || pin.length > 6) {
+  if (!name || !username || !phone || !pin) {
+    res.status(400);
+    throw new Error('Por favor, preencha todos os campos obrigatórios.');
+  }
+
+  // Verifica se o username ou telefone já existem para evitar duplicados
+  const usernameExists = await User.findOne({ username });
+  if (usernameExists) {
+    res.status(400);
+    throw new Error('Este nome de usuário já está em uso.');
+  }
+  const phoneExists = await User.findOne({ phone });
+  if (phoneExists) {
+    res.status(400);
+    throw new Error('Este número de telefone já está em uso.');
+  }
+  
+  if (pin.length < 4 || pin.length > 6) {
     res.status(400);
     throw new Error('O PIN deve ter entre 4 e 6 dígitos.');
   }
@@ -28,9 +45,12 @@ const registerUser = asyncHandler(async (req, res) => {
       invitedByUser = await User.findOne({ userId: invitedById });
   }
 
-  // Cria o novo usuário
+  // Cria o novo usuário com todos os campos
   const user = await User.create({
-    pin, // ATENÇÃO: Armazenando o PIN em texto puro, conforme solicitado.
+    name,
+    username,
+    phone,
+    pin,
     userId: newUserId,
     invitedBy: invitedByUser ? invitedByUser._id : null,
   });
@@ -38,7 +58,7 @@ const registerUser = asyncHandler(async (req, res) => {
   // Atualiza o link de convite do usuário
   user.inviteLink = generateInviteLink(user.userId);
   
-  // Adiciona o bônus de boas-vindas (Ex: 50MT)
+  // Adiciona o bônus de boas-vindas
   const welcomeBonusAmount = 50;
   user.bonusBalance += welcomeBonusAmount;
   
@@ -69,16 +89,18 @@ const registerUser = asyncHandler(async (req, res) => {
 // @route   POST /api/users/login
 // @access  Public
 const loginUser = asyncHandler(async (req, res) => {
-  const { pin } = req.body;
-  if (!pin) {
+  // ATUALIZAÇÃO: Login agora usa telefone (único) + PIN
+  const { phone, pin } = req.body;
+  if (!phone || !pin) {
     res.status(400);
-    throw new Error('Por favor, forneça o PIN.');
+    throw new Error('Por favor, forneça o número de telefone e o PIN.');
   }
 
-  // Encontra o usuário pelo PIN (comparação direta de texto puro)
-  const user = await User.findOne({ pin });
+  // Encontra o usuário pelo número de telefone
+  const user = await User.findOne({ phone });
 
-  if (user) {
+  // Se o usuário existir, compara o PIN fornecido com o PIN salvo (texto puro)
+  if (user && user.pin === pin) {
     if (user.isBlocked) {
       res.status(403);
       throw new Error('Esta conta está bloqueada.');
@@ -90,7 +112,7 @@ const loginUser = asyncHandler(async (req, res) => {
     });
   } else {
     res.status(401);
-    throw new Error('PIN inválido.');
+    throw new Error('Telefone ou PIN inválido.');
   }
 });
 
@@ -110,16 +132,10 @@ const getDashboardData = asyncHandler(async (req, res) => {
         .select('-pin')
         .populate({
             path: 'activePlanInstance',
-            populate: {
-                path: 'plan',
-                model: 'Plan'
-            }
+            populate: { path: 'plan', model: 'Plan' }
         });
 
-    if (!user) {
-        res.status(404);
-        throw new Error('Usuário não encontrado.');
-    }
+    if (!user) { res.status(404); throw new Error('Usuário não encontrado.'); }
 
     let canCollect = false;
     if (user.activePlanInstance) {
@@ -133,73 +149,36 @@ const getDashboardData = asyncHandler(async (req, res) => {
             }
         }
     }
-
     const banners = await Banner.find({ isActive: true });
-
-    res.json({
-        user,
-        banners,
-        canCollect,
-    });
+    res.json({ user, banners, canCollect });
 });
-
 
 // @desc    Fazer upload da foto de perfil
 // @route   POST /api/users/profile/picture
 // @access  Private
 const uploadProfilePicture = asyncHandler(async (req, res) => {
     const user = await User.findById(req.user._id);
-
-    if (!req.file) {
-        res.status(400);
-        throw new Error("Nenhuma imagem foi enviada.");
-    }
-
+    if (!req.file) { res.status(400); throw new Error("Nenhuma imagem foi enviada."); }
     if (user) {
         user.profilePicture = req.file.path;
         await user.save();
-        res.json({
-            message: "Foto de perfil atualizada com sucesso.",
-            profilePictureUrl: user.profilePicture,
-        });
-    } else {
-        res.status(404);
-        throw new Error("Usuário não encontrado.");
-    }
+        res.json({ message: "Foto de perfil atualizada com sucesso.", profilePictureUrl: user.profilePicture });
+    } else { res.status(404); throw new Error("Usuário não encontrado."); }
 });
-
 
 // @desc    Criar uma requisição de depósito
 // @route   POST /api/users/deposit
 // @access  Private
 const createDepositRequest = asyncHandler(async (req, res) => {
     const { amount } = req.body;
-    
-    if (!amount || amount <= 0) {
-        res.status(400);
-        throw new Error("O valor do depósito deve ser maior que zero.");
-    }
-
-    if (!req.file) {
-        res.status(400);
-        throw new Error("O comprovativo de depósito é obrigatório.");
-    }
-
+    if (!amount || amount <= 0) { res.status(400); throw new Error("O valor do depósito deve ser maior que zero."); }
+    if (!req.file) { res.status(400); throw new Error("O comprovativo de depósito é obrigatório."); }
     const depositTransaction = await Transaction.create({
-        user: req.user._id,
-        type: 'deposit',
-        amount: Number(amount),
-        status: 'pending',
+        user: req.user._id, type: 'deposit', amount: Number(amount), status: 'pending',
         description: `Requisição de depósito de ${amount} MT`,
-        transactionDetails: {
-            proofImageUrl: req.file.path,
-        }
+        transactionDetails: { proofImageUrl: req.file.path }
     });
-
-    res.status(201).json({
-        message: "Requisição de depósito enviada com sucesso. Aguardando aprovação.",
-        transaction: depositTransaction
-    });
+    res.status(201).json({ message: "Requisição de depósito enviada com sucesso. Aguardando aprovação.", transaction: depositTransaction });
 });
 
 // @desc    Criar uma requisição de saque
@@ -208,39 +187,16 @@ const createDepositRequest = asyncHandler(async (req, res) => {
 const createWithdrawalRequest = asyncHandler(async (req, res) => {
     const { amount, paymentNumber } = req.body;
     const user = req.user;
-
-    if (!user.hasDeposited) {
-        res.status(403);
-        throw new Error("Você precisa ter um depósito aprovado para poder sacar.");
-    }
-
-    if (!amount || !paymentNumber) {
-        res.status(400);
-        throw new Error("Valor e número para pagamento são obrigatórios.");
-    }
-
-    if (Number(amount) > user.walletBalance) {
-        res.status(400);
-        throw new Error("Saldo insuficiente. Você não pode sacar mais do que o seu saldo real.");
-    }
-
+    if (!user.hasDeposited) { res.status(403); throw new Error("Você precisa ter um depósito aprovado para poder sacar."); }
+    if (!amount || !paymentNumber) { res.status(400); throw new Error("Valor e número para pagamento são obrigatórios."); }
+    if (Number(amount) > user.walletBalance) { res.status(400); throw new Error("Saldo insuficiente. Você não pode sacar mais do que o seu saldo real."); }
     const withdrawalTransaction = await Transaction.create({
-        user: user._id,
-        type: 'withdrawal',
-        amount: Number(amount),
-        status: 'pending',
+        user: user._id, type: 'withdrawal', amount: Number(amount), status: 'pending',
         description: `Requisição de saque de ${amount} MT`,
-        transactionDetails: {
-            destinationNumber: paymentNumber,
-        }
+        transactionDetails: { destinationNumber: paymentNumber }
     });
-
-    res.status(201).json({
-        message: "Requisição de saque enviada com sucesso. Aguardando aprovação.",
-        transaction: withdrawalTransaction
-    });
+    res.status(201).json({ message: "Requisição de saque enviada com sucesso. Aguardando aprovação.", transaction: withdrawalTransaction });
 });
-
 
 // @desc    Obter histórico de transações do usuário
 // @route   GET /api/users/transactions
@@ -254,9 +210,7 @@ const getUserTransactions = asyncHandler(async (req, res) => {
 // @route   GET /api/users/referrals
 // @access  Private
 const getReferralData = asyncHandler(async (req, res) => {
-    const referrals = await User.find({ invitedBy: req.user._id })
-        .select('userId createdAt activePlanInstance');
-
+    const referrals = await User.find({ invitedBy: req.user._id }).select('userId createdAt activePlanInstance');
     res.json({
         inviteLink: req.user.inviteLink,
         referralCount: referrals.length,

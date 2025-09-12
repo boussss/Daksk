@@ -3,6 +3,27 @@ const mongoose = require('mongoose');
 
 // --- ESQUEMA DO USUÁRIO ---
 const UserSchema = new mongoose.Schema({
+  // === NOVOS CAMPOS ADICIONADOS ===
+  name: {
+    type: String,
+    required: [true, 'O nome completo é obrigatório.'],
+    trim: true,
+  },
+  username: {
+    type: String,
+    required: [true, 'O nome de usuário é obrigatório.'],
+    unique: true,
+    lowercase: true,
+    trim: true,
+  },
+  phone: {
+    type: String,
+    required: [true, 'O número de telefone é obrigatório.'],
+    unique: true,
+    trim: true,
+  },
+  // =================================
+
   // Nota: Armazenar PIN em texto puro não é seguro.
   // Esta implementação segue o requisito específico do projeto.
   pin: {
@@ -20,7 +41,8 @@ const UserSchema = new mongoose.Schema({
   },
   profilePicture: {
     type: String,
-    default: 'URL_DO_ICONE_DE_USUARIO_PADRAO', // Vamos substituir isso depois por um link real
+    // Você pode hospedar um ícone padrão no Cloudinary e colocar o link aqui
+    default: 'https://res.cloudinary.com/dje6f5k5u/image/upload/v1626442023/default_user_icon.png', 
   },
   walletBalance: { // Saldo real que pode ser sacado
     type: Number,
