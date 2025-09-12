@@ -1,6 +1,6 @@
 // userController.js
 const asyncHandler = require('express-async-handler');
-const { User, Transaction, Plan, PlanInstance } = require('./models'); // Adicionado Plan e PlanInstance para populate
+const { User, Transaction, Plan, PlanInstance } = require('./models');
 const { generateToken, generateUniqueUserId, generateInviteLink } = require('./utils');
 
 // @desc    Cadastrar um novo usuário
@@ -120,7 +120,6 @@ const getUserProfile = asyncHandler(async (req, res) => {
 const getDashboardData = asyncHandler(async (req, res) => {
     const userId = req.user._id;
 
-    // --- 1. Obter dados básicos do usuário e do plano ativo ---
     const user = await User.findById(userId)
         .select('-pin')
         .populate({
@@ -130,14 +129,12 @@ const getDashboardData = asyncHandler(async (req, res) => {
 
     if (!user) { res.status(404); throw new Error('Usuário não encontrado.'); }
 
-    // --- 2. Calcular estatísticas de lucro com datas ---
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const yesterdayStart = new Date(todayStart);
     yesterdayStart.setDate(yesterdayStart.getDate() - 1);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // Função auxiliar para rodar a agregação
     const getProfitSum = async (startDate, endDate, types) => {
         const result = await Transaction.aggregate([
             { $match: { 
@@ -153,15 +150,13 @@ const getDashboardData = asyncHandler(async (req, res) => {
 
     const profitTypes = ['collection', 'commission'];
 
-    // Executa os cálculos em paralelo para mais performance
     const [todayProfit, yesterdayProfit, monthProfit, totalReferralProfit] = await Promise.all([
         getProfitSum(todayStart, new Date(todayStart.getTime() + 24 * 60 * 60 * 1000), profitTypes),
         getProfitSum(yesterdayStart, todayStart, profitTypes),
         getProfitSum(monthStart, new Date(now.getFullYear(), now.getMonth() + 1, 1), profitTypes),
-        getProfitSum(new Date(0), new Date(), ['commission']) // Comissão total (desde o início)
+        getProfitSum(new Date(0), new Date(), ['commission'])
     ]);
     
-    // --- 3. Montar o objeto de resposta final ---
     res.json({ 
         user,
         stats: {
@@ -260,7 +255,6 @@ const getUserTransactions = asyncHandler(async (req, res) => {
 // @route   GET /api/users/referrals
 // @access  Private
 const getReferralData = asyncHandler(async (req, res) => {
-    // Busca os convidados e popula os dados do plano ativo e os detalhes do plano
     const referrals = await User.find({ invitedBy: req.user._id })
         .select('userId username createdAt activePlanInstance')
         .populate({
@@ -268,18 +262,16 @@ const getReferralData = asyncHandler(async (req, res) => {
             populate: {
                 path: 'plan',
                 model: 'Plan',
-                select: 'name' // Seleciona apenas o nome do plano
+                select: 'name'
             }
         });
 
-    // Função para calcular o total de comissão para um convidado específico
     const getCommissionFromReferral = async (referralUserId) => {
         const result = await Transaction.aggregate([
             { $match: {
                 user: req.user._id,
                 type: 'commission',
                 status: 'approved',
-                // Procura pela descrição que contém o ID do convidado
                 description: { $regex: new RegExp(referralUserId) }
             }},
             { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -287,7 +279,6 @@ const getReferralData = asyncHandler(async (req, res) => {
         return result.length > 0 ? result[0].total : 0;
     };
 
-    // Mapeia os convidados para o formato desejado, calculando a comissão para cada um
     const referralsList = await Promise.all(referrals.map(async (ref) => {
         const totalYield = await getCommissionFromReferral(ref.userId);
         return {
@@ -306,6 +297,54 @@ const getReferralData = asyncHandler(async (req, res) => {
     });
 });
 
+// @desc    Obter histórico de planos do usuário
+// @route   GET /api/users/plan-history
+// @access  Private
+const getPlanHistory = asyncHandler(async (req, res) => {
+    const planInstances = await PlanInstance.find({ user: req.user._id })
+        .populate('plan', 'name')
+        .sort({ startDate: -1 });
+
+    res.status(200).json(planInstances);
+});
+
+// @desc    Obter um resumo estatístico da carteira
+// @route   GET /api/users/wallet-summary
+// @access  Private
+const getWalletSummary = asyncHandler(async (req, res) => {
+    const userId = req.user._id;
+
+    const summary = await Transaction.aggregate([
+        {
+            $match: {
+                user: userId,
+                status: 'approved'
+            }
+        },
+        {
+            $group: {
+                _id: '$type',
+                total: { $sum: '$amount' }
+            }
+        }
+    ]);
+
+    const summaryData = summary.reduce((acc, item) => {
+        acc[item._id] = item.total;
+        return acc;
+    }, {});
+    
+    const totalDeposited = summaryData.deposit || 0;
+    const totalWithdrawn = Math.abs(summaryData.withdrawal || 0);
+    const totalProfit = (summaryData.collection || 0) + (summaryData.commission || 0) + (summaryData.welcome_bonus || 0);
+
+    res.status(200).json({
+        totalDeposited,
+        totalWithdrawn,
+        totalProfit
+    });
+});
+
 module.exports = {
   registerUser,
   loginUser,
@@ -316,4 +355,6 @@ module.exports = {
   createWithdrawalRequest,
   getUserTransactions,
   getReferralData,
+  getPlanHistory,
+  getWalletSummary,
 };
