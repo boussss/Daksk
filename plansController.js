@@ -241,6 +241,11 @@ const collectDailyProfit = asyncHandler(async (req, res) => {
 //  FUNÇÕES DO LADO DO ADMIN
 //=====================================================
 
+const getAllPlansForAdmin = asyncHandler(async (req, res) => {
+    const plans = await Plan.find({});
+    res.json(plans);
+});
+
 const createPlan = asyncHandler(async (req, res) => {
     const { name, minAmount, maxAmount, dailyYieldType, dailyYieldValue, durationDays, hashRate } = req.body;
     if (!name || !minAmount || !maxAmount || !dailyYieldType || !dailyYieldValue || !durationDays) {
@@ -273,6 +278,7 @@ module.exports = {
     getAllAvailablePlans,
     activatePlan,
     collectDailyProfit,
+    getAllPlansForAdmin,
     createPlan,
     updatePlan,
     deletePlan,

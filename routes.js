@@ -70,6 +70,7 @@ adminRouter.put('/users/:id/block', protectAdmin, adminController.toggleUserBloc
 adminRouter.put('/users/:id/balance', protectAdmin, adminController.updateUserBalance);
 
 // --- Gerenciamento de Planos ---
+adminRouter.get('/plans', protectAdmin, plansController.getAllPlansForAdmin); // Rota para o admin listar os planos
 adminRouter.post('/plans', protectAdmin, uploadPlanImage.single('image'), plansController.createPlan);
 adminRouter.put('/plans/:id', protectAdmin, uploadPlanImage.single('image'), plansController.updatePlan);
 adminRouter.delete('/plans/:id', protectAdmin, plansController.deletePlan);
