@@ -1,6 +1,6 @@
 // userController.js
 const asyncHandler = require('express-async-handler');
-const { User, Transaction, Plan, PlanInstance, Banner } = require('./models'); // ADICIONE 'Banner' AQUI
+const { User, Transaction, Plan, PlanInstance, Banner } = require('./models');
 const { generateToken, generateUniqueUserId, generateInviteLink } = require('./utils');
 
 // @desc    Cadastrar um novo usuário
@@ -51,8 +51,9 @@ const registerUser = asyncHandler(async (req, res) => {
     invitedBy: invitedByUser ? invitedByUser._id : null,
   });
   
-  user.inviteLink = generateInviteLink(user.userId);
-  
+  // Apenas salva os dados. O link completo será gerado quando solicitado.
+  await user.save();
+
   const welcomeBonusAmount = 50;
   user.bonusBalance += welcomeBonusAmount;
   
@@ -120,7 +121,6 @@ const getUserProfile = asyncHandler(async (req, res) => {
 const getDashboardData = asyncHandler(async (req, res) => {
     const userId = req.user._id;
 
-    // --- CORREÇÃO AQUI: BUSCA OS BANNERS JUNTO COM OS OUTROS DADOS ---
     const [user, banners] = await Promise.all([
         User.findById(userId)
             .select('-pin')
@@ -128,7 +128,7 @@ const getDashboardData = asyncHandler(async (req, res) => {
                 path: 'activePlanInstance',
                 populate: { path: 'plan', model: 'Plan' }
             }),
-        Banner.find({ isActive: true }) // Busca todos os banners que estão ativos
+        Banner.find({ isActive: true })
     ]);
 
     if (!user) { res.status(404); throw new Error('Usuário não encontrado.'); }
@@ -161,10 +161,9 @@ const getDashboardData = asyncHandler(async (req, res) => {
         getProfitSum(new Date(0), new Date(), ['commission'])
     ]);
     
-    // --- CORREÇÃO AQUI: INCLUI OS BANNERS NA RESPOSTA ---
     res.json({ 
         user,
-        banners, // Adiciona a lista de banners na resposta para o front-end
+        banners,
         stats: {
             todayProfit,
             yesterdayProfit,
@@ -334,8 +333,11 @@ const getReferralData = asyncHandler(async (req, res) => {
         };
     }));
 
+    // --- CORREÇÃO APLICADA AQUI ---
+    const fullInviteLink = generateInviteLink(req.user.userId);
+
     res.json({
-        inviteLink: req.user.inviteLink,
+        inviteLink: fullInviteLink, // Envia o link completo
         referralCount: referrals.length,
         referralsList: referralsList,
     });
