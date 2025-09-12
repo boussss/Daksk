@@ -45,13 +45,13 @@ userRouter.get('/referrals', protectUser, userController.getReferralData);
 planRouter.get('/', protectUser, plansController.getAllAvailablePlans);
 planRouter.post('/:planId/activate', protectUser, plansController.activatePlan);
 planRouter.post('/collect', protectUser, plansController.collectDailyProfit);
+planRouter.post('/upgrade/:newPlanId', protectUser, plansController.upgradePlan); // Rota para upgrade
 
 
 //=====================================================
 //  ROTAS DE CONFIGURAÇÕES PÚBLICAS
 //=====================================================
 
-// Rota para usuários obterem métodos de depósito, etc.
 settingsRouter.get('/public', protectUser, settingsController.getPublicSettings);
 
 

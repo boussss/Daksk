@@ -7,17 +7,30 @@ const { User, Plan, PlanInstance, Transaction } = require('./models');
 //=====================================================
 
 /**
- * @desc    Obter todos os planos de investimento disponíveis
+ * @desc    Obter todos os planos de investimento e o plano ativo do usuário
  * @route   GET /api/plans
  * @access  Private (usuário logado)
  */
 const getAllAvailablePlans = asyncHandler(async (req, res) => {
-    const plans = await Plan.find({});
-    res.json(plans);
+    // Busca o usuário logado e popula seu plano ativo, incluindo os detalhes do plano
+    const user = await User.findById(req.user._id).populate({
+        path: 'activePlanInstance',
+        populate: { path: 'plan', model: 'Plan' }
+    });
+    
+    // Busca todos os planos disponíveis no sistema
+    const allPlans = await Plan.find({});
+    
+    // Retorna tanto a lista de planos quanto o plano ativo do usuário (ou null se não tiver)
+    // O frontend usará isso para decidir se mostra "Investir" ou "Upgrade"
+    res.json({
+        plans: allPlans,
+        activePlanInstance: user ? user.activePlanInstance : null,
+    });
 });
 
 /**
- * @desc    Ativar um plano de investimento para o usuário
+ * @desc    Ativar um plano de investimento para um novo usuário (sem plano ativo)
  * @route   POST /api/plans/:planId/activate
  * @access  Private
  */
@@ -27,7 +40,7 @@ const activatePlan = asyncHandler(async (req, res) => {
     const user = await User.findById(req.user._id);
 
     if (user.activePlanInstance) {
-        return res.status(400).json({ message: 'Você já possui um plano ativo.' });
+        return res.status(400).json({ message: 'Você já possui um plano ativo. Para mudar, faça um upgrade.' });
     }
 
     const plan = await Plan.findById(planId);
@@ -40,17 +53,29 @@ const activatePlan = asyncHandler(async (req, res) => {
         return res.status(400).json({ message: `O valor do investimento deve estar entre ${plan.minAmount} MT e ${plan.maxAmount} MT.` });
     }
 
-    if (user.walletBalance < amount) {
-        return res.status(400).json({ message: 'Saldo insuficiente para ativar este plano.' });
+    let realAmountToPay = amount;
+    let bonusAmountUsed = 0;
+
+    // Lógica para usar o saldo de bônus como parte do pagamento
+    if (user.bonusBalance > 0) {
+        if (user.bonusBalance >= amount) {
+            bonusAmountUsed = amount;
+            realAmountToPay = 0;
+        } else {
+            bonusAmountUsed = user.bonusBalance;
+            realAmountToPay = amount - user.bonusBalance;
+        }
     }
 
-    // --- Lógica Principal da Ativação ---
-    user.walletBalance -= amount;
+    if (user.walletBalance < realAmountToPay) {
+        return res.status(400).json({ message: 'Saldo real insuficiente para ativar este plano, mesmo com o bônus.' });
+    }
 
-    const dailyProfit = plan.dailyYieldType === 'fixed'
-        ? plan.dailyYieldValue
-        : (amount * plan.dailyYieldValue) / 100;
+    // Deduz os valores da carteira e do bônus
+    user.walletBalance -= realAmountToPay;
+    user.bonusBalance -= bonusAmountUsed;
 
+    const dailyProfit = plan.dailyYieldType === 'fixed' ? plan.dailyYieldValue : (amount * plan.dailyYieldValue) / 100;
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + plan.durationDays);
 
@@ -72,11 +97,10 @@ const activatePlan = asyncHandler(async (req, res) => {
         description: `Investimento no plano "${plan.name}"`,
     });
 
-    // --- Lógica de Bônus de Convite (15% do valor do plano) ---
     if (user.invitedBy) {
         const referrer = await User.findById(user.invitedBy);
         if (referrer) {
-            const commissionAmount = amount * 0.15; // TODO: Esta % deve ser configurável pelo admin
+            const commissionAmount = amount * 0.15; // TODO: Esta % deve vir das configurações
             referrer.walletBalance += commissionAmount;
             await referrer.save();
 
@@ -84,15 +108,78 @@ const activatePlan = asyncHandler(async (req, res) => {
                 user: referrer._id,
                 type: 'commission',
                 amount: commissionAmount,
-                description: `Comissão (15%) pela ativação do plano do usuário ${user.userId}`,
+                description: `Comissão por ativação de plano do usuário ${user.userId}`,
             });
         }
     }
 
-    res.status(201).json({
-        message: 'Plano ativado com sucesso!',
-        planInstance: newPlanInstance,
+    res.status(201).json({ message: 'Plano ativado com sucesso!', planInstance: newPlanInstance });
+});
+
+/**
+ * @desc    Fazer upgrade de um plano ativo para um superior
+ * @route   POST /api/plans/upgrade/:newPlanId
+ * @access  Private
+ */
+const upgradePlan = asyncHandler(async (req, res) => {
+    const { newPlanId } = req.params;
+    const user = await User.findById(req.user._id).populate({
+        path: 'activePlanInstance',
+        populate: { path: 'plan', model: 'Plan' }
     });
+
+    if (!user.activePlanInstance) {
+        return res.status(400).json({ message: 'Você não tem um plano ativo para fazer upgrade.' });
+    }
+
+    const newPlan = await Plan.findById(newPlanId);
+    if (!newPlan) {
+        return res.status(404).json({ message: 'Novo plano não encontrado.' });
+    }
+    
+    const oldPlanInstance = user.activePlanInstance;
+    const oldPlan = oldPlanInstance.plan;
+
+    if (newPlan.minAmount <= oldPlan.minAmount) {
+        return res.status(400).json({ message: 'Você só pode fazer upgrade para um plano de valor superior.' });
+    }
+
+    const priceDifference = newPlan.minAmount - oldPlan.minAmount;
+    if (user.walletBalance < priceDifference) {
+        return res.status(400).json({ message: `Saldo insuficiente. Você precisa de ${formatCurrency(priceDifference)} para este upgrade.` });
+    }
+
+    // Deduz a diferença do saldo
+    user.walletBalance -= priceDifference;
+    
+    // Marca o plano antigo como expirado
+    oldPlanInstance.status = 'expired';
+    await oldPlanInstance.save();
+    
+    // Cria a nova instância de plano
+    const dailyProfit = newPlan.dailyYieldType === 'fixed' ? newPlan.dailyYieldValue : (newPlan.minAmount * newPlan.dailyYieldValue) / 100;
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + newPlan.durationDays);
+
+    const newPlanInstance = await PlanInstance.create({
+        user: user._id,
+        plan: newPlan._id,
+        investedAmount: newPlan.minAmount,
+        dailyProfit: dailyProfit,
+        endDate: endDate,
+    });
+
+    user.activePlanInstance = newPlanInstance._id;
+    await user.save();
+
+    await Transaction.create({
+        user: user._id,
+        type: 'investment',
+        amount: -priceDifference,
+        description: `Upgrade do plano "${oldPlan.name}" para "${newPlan.name}"`,
+    });
+
+    res.json({ message: 'Upgrade de plano realizado com sucesso!' });
 });
 
 /**
@@ -136,20 +223,13 @@ const collectDailyProfit = asyncHandler(async (req, res) => {
 
     await Transaction.create({ user: user._id, type: 'collection', amount: profit, description: 'Coleta de rendimento diário' });
 
-    // --- Lógica de Comissão Diária para o Convidante (5% do lucro) ---
     if (user.invitedBy) {
         const referrer = await User.findById(user.invitedBy);
-        if (referrer && referrer.activePlanInstance) { // Só paga comissão se o convidante estiver ativo
-            const dailyCommission = profit * 0.05; // TODO: Esta % deve ser configurável pelo admin
+        if (referrer && referrer.activePlanInstance) {
+            const dailyCommission = profit * 0.05; // TODO: Esta % deve vir das configurações
             referrer.walletBalance += dailyCommission;
             await referrer.save();
-
-            await Transaction.create({
-                user: referrer._id,
-                type: 'commission',
-                amount: dailyCommission,
-                description: `Comissão diária (5%) do lucro do usuário ${user.userId}`,
-            });
+            await Transaction.create({ user: referrer._id, type: 'commission', amount: dailyCommission, description: `Comissão diária do lucro do usuário ${user.userId}` });
         }
     }
     
@@ -161,79 +241,40 @@ const collectDailyProfit = asyncHandler(async (req, res) => {
 //  FUNÇÕES DO LADO DO ADMIN
 //=====================================================
 
-/**
- * @desc    Admin: Criar um novo plano de investimento
- * @route   POST /api/admin/plans
- * @access  Admin
- */
 const createPlan = asyncHandler(async (req, res) => {
-    const { name, minAmount, maxAmount, dailyYieldType, dailyYieldValue, durationDays } = req.body;
+    const { name, minAmount, maxAmount, dailyYieldType, dailyYieldValue, durationDays, hashRate } = req.body;
     if (!name || !minAmount || !maxAmount || !dailyYieldType || !dailyYieldValue || !durationDays) {
-        return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
+        return res.status(400).json({ message: 'Todos os campos, exceto a imagem e hash, são obrigatórios.' });
     }
-    
-    const plan = await Plan.create({
-        ...req.body,
-        imageUrl: req.file ? req.file.path : ''
-    });
-
+    const plan = await Plan.create({ name, minAmount, maxAmount, dailyYieldType, dailyYieldValue, durationDays, hashRate, imageUrl: req.file ? req.file.path : '' });
     res.status(201).json(plan);
 });
 
-/**
- * @desc    Admin: Atualizar um plano de investimento existente
- * @route   PUT /api/admin/plans/:id
- * @access  Admin
- */
 const updatePlan = asyncHandler(async (req, res) => {
     const plan = await Plan.findById(req.params.id);
-
-    if (!plan) {
-        return res.status(404).json({ message: 'Plano não encontrado.' });
-    }
-
-    // Atualiza os campos do plano com os dados do corpo da requisição
+    if (!plan) { return res.status(404).json({ message: 'Plano não encontrado.' }); }
     Object.assign(plan, req.body);
-
-    // Se uma nova imagem foi enviada, atualiza a URL da imagem
-    if (req.file) {
-        plan.imageUrl = req.file.path;
-    }
-
+    if (req.file) { plan.imageUrl = req.file.path; }
     const updatedPlan = await plan.save();
     res.json(updatedPlan);
 });
 
-/**
- * @desc    Admin: Deletar um plano de investimento
- * @route   DELETE /api/admin/plans/:id
- * @access  Admin
- */
 const deletePlan = asyncHandler(async (req, res) => {
     const plan = await Plan.findById(req.params.id);
-
-    if (!plan) {
-        return res.status(404).json({ message: 'Plano não encontrado.' });
-    }
-
-    // Medida de Segurança: Verifica se algum usuário está com este plano ativo
+    if (!plan) { return res.status(404).json({ message: 'Plano não encontrado.' }); }
     const activeInstances = await PlanInstance.countDocuments({ plan: plan._id, status: 'active' });
-    if (activeInstances > 0) {
-        return res.status(400).json({ message: `Não é possível deletar este plano, pois ${activeInstances} usuário(s) o têm ativo.` });
-    }
-
+    if (activeInstances > 0) { return res.status(400).json({ message: `Não é possível deletar este plano, pois ${activeInstances} usuário(s) o têm ativo.` }); }
     await plan.deleteOne();
     res.json({ message: 'Plano deletado com sucesso.' });
 });
 
 
 module.exports = {
-    // Funções de Usuário
     getAllAvailablePlans,
     activatePlan,
     collectDailyProfit,
-    // Funções de Admin
     createPlan,
     updatePlan,
     deletePlan,
+    upgradePlan,
 };
