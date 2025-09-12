@@ -12,17 +12,13 @@ const { User, Plan, PlanInstance, Transaction } = require('./models');
  * @access  Private (usuário logado)
  */
 const getAllAvailablePlans = asyncHandler(async (req, res) => {
-    // Busca o usuário logado e popula seu plano ativo, incluindo os detalhes do plano
     const user = await User.findById(req.user._id).populate({
         path: 'activePlanInstance',
         populate: { path: 'plan', model: 'Plan' }
     });
     
-    // Busca todos os planos disponíveis no sistema
     const allPlans = await Plan.find({});
     
-    // Retorna tanto a lista de planos quanto o plano ativo do usuário (ou null se não tiver)
-    // O frontend usará isso para decidir se mostra "Investir" ou "Upgrade"
     res.json({
         plans: allPlans,
         activePlanInstance: user ? user.activePlanInstance : null,
@@ -56,7 +52,6 @@ const activatePlan = asyncHandler(async (req, res) => {
     let realAmountToPay = amount;
     let bonusAmountUsed = 0;
 
-    // Lógica para usar o saldo de bônus como parte do pagamento
     if (user.bonusBalance > 0) {
         if (user.bonusBalance >= amount) {
             bonusAmountUsed = amount;
@@ -71,7 +66,6 @@ const activatePlan = asyncHandler(async (req, res) => {
         return res.status(400).json({ message: 'Saldo real insuficiente para ativar este plano, mesmo com o bônus.' });
     }
 
-    // Deduz os valores da carteira e do bônus
     user.walletBalance -= realAmountToPay;
     user.bonusBalance -= bonusAmountUsed;
 
@@ -88,7 +82,6 @@ const activatePlan = asyncHandler(async (req, res) => {
     });
     
     user.activePlanInstance = newPlanInstance._id;
-    await user.save();
 
     await Transaction.create({
         user: user._id,
@@ -97,10 +90,29 @@ const activatePlan = asyncHandler(async (req, res) => {
         description: `Investimento no plano "${plan.name}"`,
     });
 
+    // --- NOVA LÓGICA DE COLETA IMEDIATA ---
+    // 1. Adiciona o lucro do primeiro dia diretamente à carteira do usuário.
+    user.walletBalance += dailyProfit;
+    
+    // 2. Define a data da última coleta como agora, para que o próximo ciclo de 24h comece imediatamente.
+    newPlanInstance.lastCollectedDate = new Date();
+    newPlanInstance.totalCollected += dailyProfit;
+
+    // 3. Cria uma transação para registrar esta primeira coleta automática.
+    await Transaction.create({
+        user: user._id,
+        type: 'collection',
+        amount: dailyProfit,
+        description: 'Coleta inicial na ativação do plano'
+    });
+    
+    await newPlanInstance.save();
+    // --- FIM DA NOVA LÓGICA ---
+
     if (user.invitedBy) {
         const referrer = await User.findById(user.invitedBy);
         if (referrer) {
-            const commissionAmount = amount * 0.15; // TODO: Esta % deve vir das configurações
+            const commissionAmount = amount * 0.15; // TODO: Usar % das configurações
             referrer.walletBalance += commissionAmount;
             await referrer.save();
 
@@ -112,9 +124,14 @@ const activatePlan = asyncHandler(async (req, res) => {
             });
         }
     }
+    
+    // Salva o usuário por último, após todas as alterações de saldo.
+    await user.save();
 
     res.status(201).json({ message: 'Plano ativado com sucesso!', planInstance: newPlanInstance });
 });
+
+// ... (O restante do arquivo: upgradePlan, collectDailyProfit, e funções de admin permanecem os mesmos)
 
 /**
  * @desc    Fazer upgrade de um plano ativo para um superior
@@ -146,17 +163,14 @@ const upgradePlan = asyncHandler(async (req, res) => {
 
     const priceDifference = newPlan.minAmount - oldPlan.minAmount;
     if (user.walletBalance < priceDifference) {
-        return res.status(400).json({ message: `Saldo insuficiente. Você precisa de ${formatCurrency(priceDifference)} para este upgrade.` });
+        return res.status(400).json({ message: `Saldo insuficiente. Você precisa de ${priceDifference} MT para este upgrade.` });
     }
 
-    // Deduz a diferença do saldo
     user.walletBalance -= priceDifference;
     
-    // Marca o plano antigo como expirado
     oldPlanInstance.status = 'expired';
     await oldPlanInstance.save();
     
-    // Cria a nova instância de plano
     const dailyProfit = newPlan.dailyYieldType === 'fixed' ? newPlan.dailyYieldValue : (newPlan.minAmount * newPlan.dailyYieldValue) / 100;
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + newPlan.durationDays);
@@ -226,7 +240,7 @@ const collectDailyProfit = asyncHandler(async (req, res) => {
     if (user.invitedBy) {
         const referrer = await User.findById(user.invitedBy);
         if (referrer && referrer.activePlanInstance) {
-            const dailyCommission = profit * 0.05; // TODO: Esta % deve vir das configurações
+            const dailyCommission = profit * 0.05; // TODO: Usar % das configurações
             referrer.walletBalance += dailyCommission;
             await referrer.save();
             await Transaction.create({ user: referrer._id, type: 'commission', amount: dailyCommission, description: `Comissão diária do lucro do usuário ${user.userId}` });
