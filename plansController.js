@@ -1,6 +1,6 @@
 // plansController.js
 const asyncHandler = require('express-async-handler');
-const { User, Plan, PlanInstance, Transaction } = require('./models');
+const { User, Plan, PlanInstance, Transaction, Settings } = require('./models');
 
 //=====================================================
 //  FUNÇÕES DO LADO DO USUÁRIO
@@ -34,6 +34,11 @@ const activatePlan = asyncHandler(async (req, res) => {
     const { planId } = req.params;
     const { investedAmount } = req.body;
     const user = await User.findById(req.user._id);
+
+    const settings = await Settings.findOne({ configKey: "main_settings" });
+    if (!settings) {
+        return res.status(500).json({ message: "Configurações do sistema não encontradas." });
+    }
 
     if (user.activePlanInstance) {
         return res.status(400).json({ message: 'Você já possui um plano ativo. Para mudar, faça um upgrade.' });
@@ -82,6 +87,7 @@ const activatePlan = asyncHandler(async (req, res) => {
     });
     
     user.activePlanInstance = newPlanInstance._id;
+    await user.save();
 
     await Transaction.create({
         user: user._id,
@@ -90,22 +96,10 @@ const activatePlan = asyncHandler(async (req, res) => {
         description: `Investimento no plano "${plan.name}"`,
     });
 
-    user.walletBalance += dailyProfit;
-    newPlanInstance.lastCollectedDate = new Date();
-    newPlanInstance.totalCollected += dailyProfit;
-    await newPlanInstance.save();
-    
-    await Transaction.create({
-        user: user._id,
-        type: 'collection',
-        amount: dailyProfit,
-        description: 'Coleta inicial na ativação do plano'
-    });
-
     if (user.invitedBy) {
         const referrer = await User.findById(user.invitedBy);
         if (referrer) {
-            const commissionAmount = amount * 0.15; // TODO: Usar % das configurações
+            const commissionAmount = amount * (settings.referralCommissionRate / 100);
             referrer.walletBalance += commissionAmount;
             await referrer.save();
 
@@ -117,8 +111,6 @@ const activatePlan = asyncHandler(async (req, res) => {
             });
         }
     }
-    
-    await user.save();
 
     res.status(201).json({ message: 'Plano ativado com sucesso!', planInstance: newPlanInstance });
 });
@@ -194,6 +186,11 @@ const upgradePlan = asyncHandler(async (req, res) => {
 const collectDailyProfit = asyncHandler(async (req, res) => {
     const user = await User.findById(req.user._id).populate('activePlanInstance');
     
+    const settings = await Settings.findOne({ configKey: "main_settings" });
+    if (!settings) {
+        return res.status(500).json({ message: "Configurações do sistema não encontradas." });
+    }
+
     if (!user.activePlanInstance) {
         return res.status(400).json({ message: 'Você não tem um plano ativo para coletar lucros.' });
     }
@@ -208,12 +205,12 @@ const collectDailyProfit = asyncHandler(async (req, res) => {
         return res.status(400).json({ message: 'Este plano já expirou.' });
     }
 
-    if (planInstance.lastCollectedDate) {
-        const nextCollectionTime = new Date(planInstance.lastCollectedDate).getTime() + (24 * 60 * 60 * 1000);
-        if (Date.now() < nextCollectionTime) {
-            const remainingHours = ((nextCollectionTime - Date.now()) / (1000 * 60 * 60)).toFixed(1);
-            return res.status(400).json({ message: `Você já coletou hoje. Tente novamente em aproximadamente ${remainingHours} horas.` });
-        }
+    const lastCollectionBase = planInstance.lastCollectedDate || planInstance.startDate;
+    const nextCollectionTime = new Date(lastCollectionBase).getTime() + (24 * 60 * 60 * 1000);
+
+    if (Date.now() < nextCollectionTime) {
+        const remainingHours = ((nextCollectionTime - Date.now()) / (1000 * 60 * 60)).toFixed(1);
+        return res.status(400).json({ message: `Você já coletou hoje. Tente novamente em aproximadamente ${remainingHours} horas.` });
     }
 
     const profit = planInstance.dailyProfit;
@@ -230,14 +227,14 @@ const collectDailyProfit = asyncHandler(async (req, res) => {
     if (user.invitedBy) {
         const referrer = await User.findById(user.invitedBy);
         if (referrer && referrer.activePlanInstance) {
-            const dailyCommission = profit * 0.05; // TODO: Usar % das configurações
+            const dailyCommission = profit * (settings.dailyCommissionRate / 100);
             referrer.walletBalance += dailyCommission;
             await referrer.save();
             await Transaction.create({ user: referrer._id, type: 'commission', amount: dailyCommission, description: `Comissão diária do lucro do usuário ${user.userId}` });
         }
     }
     
-    res.json({ message: `Você coletou ${profit} MT com sucesso.` });
+    res.json({ message: `Você coletou ${formatCurrency(profit)} MT com sucesso.` });
 });
 
 /**
@@ -285,11 +282,6 @@ const renewPlan = asyncHandler(async (req, res) => {
         dailyProfit: dailyProfit,
         endDate: endDate,
     });
-    
-    user.walletBalance += dailyProfit;
-    newInstance.lastCollectedDate = new Date();
-    newInstance.totalCollected += dailyProfit;
-    await newInstance.save();
 
     user.activePlanInstance = newInstance._id;
     await user.save();
@@ -297,10 +289,6 @@ const renewPlan = asyncHandler(async (req, res) => {
     await Transaction.create({
         user: user._id, type: 'investment', amount: -renewalCost,
         description: `Renovação do plano "${planToRenew.name}"`,
-    });
-    await Transaction.create({
-        user: user._id, type: 'collection', amount: dailyProfit,
-        description: 'Coleta inicial na renovação do plano',
     });
 
     res.status(200).json({ message: 'Plano renovado com sucesso!' });
@@ -347,11 +335,15 @@ const deletePlan = asyncHandler(async (req, res) => {
 module.exports = {
     getAllAvailablePlans,
     activatePlan,
-    collectDailyProfit,
     upgradePlan,
+    collectDailyProfit,
     renewPlan,
     getAllPlansForAdmin,
     createPlan,
     updatePlan,
     deletePlan,
 };
+
+function formatCurrency(value) {
+    return new Intl.NumberFormat('pt-MZ', { style: 'currency', currency: 'MZN' }).format(value);
+}

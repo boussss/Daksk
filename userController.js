@@ -1,6 +1,6 @@
 // userController.js
 const asyncHandler = require('express-async-handler');
-const { User, Transaction, Plan, PlanInstance, Banner } = require('./models');
+const { User, Transaction, Plan, PlanInstance, Banner, Settings } = require('./models');
 const { generateToken, generateUniqueUserId, generateInviteLink } = require('./utils');
 
 // @desc    Cadastrar um novo usuário
@@ -51,12 +51,10 @@ const registerUser = asyncHandler(async (req, res) => {
     invitedBy: invitedByUser ? invitedByUser._id : null,
   });
   
-  // Apenas salva os dados. O link completo será gerado quando solicitado.
-  await user.save();
+  const settings = await Settings.findOne({ configKey: "main_settings" });
+  const welcomeBonusAmount = settings ? settings.welcomeBonus : 50; // Usa o valor do DB ou um fallback
 
-  const welcomeBonusAmount = 50;
   user.bonusBalance += welcomeBonusAmount;
-  
   await user.save();
 
   await Transaction.create({
@@ -173,7 +171,6 @@ const getDashboardData = asyncHandler(async (req, res) => {
     });
 });
 
-
 // @desc    Fazer upload da foto de perfil
 // @route   POST /api/users/profile/picture
 // @access  Private
@@ -191,8 +188,10 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
 // @route   POST /api/users/deposit
 // @access  Private
 const createDepositRequest = asyncHandler(async (req, res) => {
-    const DEPOSIT_MIN = 50;
-    const DEPOSIT_MAX = 25000;
+    const settings = await Settings.findOne({ configKey: "main_settings" });
+    if (!settings) {
+        return res.status(500).json({ message: "Configurações do sistema não encontradas." });
+    }
     
     const { amount, proofText } = req.body;
     const depositAmount = Number(amount);
@@ -202,9 +201,9 @@ const createDepositRequest = asyncHandler(async (req, res) => {
         throw new Error("O valor do depósito deve ser maior que zero."); 
     }
     
-    if (depositAmount < DEPOSIT_MIN || depositAmount > DEPOSIT_MAX) {
+    if (depositAmount < settings.depositMin || depositAmount > settings.depositMax) {
         res.status(400);
-        throw new Error(`O valor do depósito deve estar entre ${DEPOSIT_MIN} MT e ${DEPOSIT_MAX} MT.`);
+        throw new Error(`O valor do depósito deve estar entre ${settings.depositMin} MT e ${settings.depositMax} MT.`);
     }
 
     if (!req.file && !proofText) {
@@ -244,9 +243,10 @@ const createDepositRequest = asyncHandler(async (req, res) => {
 // @route   POST /api/users/withdraw
 // @access  Private
 const createWithdrawalRequest = asyncHandler(async (req, res) => {
-    const WITHDRAWAL_MIN = 100;
-    const WITHDRAWAL_MAX = 25000;
-    const WITHDRAWAL_FEE_PERCENTAGE = 3;
+    const settings = await Settings.findOne({ configKey: "main_settings" });
+    if (!settings) {
+        return res.status(500).json({ message: "Configurações do sistema não encontradas." });
+    }
 
     const { amount, paymentNumber } = req.body;
     const user = req.user;
@@ -257,9 +257,9 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
         throw new Error("Valor e número para pagamento são obrigatórios."); 
     }
     
-    if (withdrawalAmount < WITHDRAWAL_MIN || withdrawalAmount > WITHDRAWAL_MAX) {
+    if (withdrawalAmount < settings.withdrawalMin || withdrawalAmount > settings.withdrawalMax) {
         res.status(400);
-        throw new Error(`O valor do saque deve estar entre ${WITHDRAWAL_MIN} MT e ${WITHDRAWAL_MAX} MT.`);
+        throw new Error(`O valor do saque deve estar entre ${settings.withdrawalMin} MT e ${settings.withdrawalMax} MT.`);
     }
 
     if (!user.hasDeposited) { 
@@ -267,7 +267,7 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
         throw new Error("Você precisa ter um depósito aprovado para poder sacar."); 
     }
     
-    const fee = (withdrawalAmount * WITHDRAWAL_FEE_PERCENTAGE) / 100;
+    const fee = (withdrawalAmount * settings.withdrawalFee) / 100;
     const totalDeducted = withdrawalAmount + fee;
     
     if (totalDeducted > user.walletBalance) { 
@@ -333,11 +333,10 @@ const getReferralData = asyncHandler(async (req, res) => {
         };
     }));
 
-    // --- CORREÇÃO APLICADA AQUI ---
     const fullInviteLink = generateInviteLink(req.user.userId);
 
     res.json({
-        inviteLink: fullInviteLink, // Envia o link completo
+        inviteLink: fullInviteLink,
         referralCount: referrals.length,
         referralsList: referralsList,
     });

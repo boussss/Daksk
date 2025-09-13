@@ -56,9 +56,9 @@ const TransactionSchema = new mongoose.Schema({
   description: String,
   transactionDetails: {
     type: Object,
-    // Exemplos de conteúdo:
-    // Depósito: { proofType: 'image', proofUrl: 'url' } ou { proofType: 'text', proofText: 'sms...' }
-    // Saque: { destinationNumber: '84...', fee: 30, totalDeducted: 1030 } // <-- ATUALIZAÇÃO AQUI
+    // Exemplos:
+    // Depósito: { proofType: 'image', proofUrl: 'url' }
+    // Saque: { destinationNumber: '84...', fee: 30, totalDeducted: 1030 }
   },
   createdAt: { type: Date, default: Date.now },
 });
@@ -76,18 +76,29 @@ const BannerSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
 });
 
-// --- ESQUEMA DE CONFIGURAÇÕES ---
+// --- ESQUEMA DE CONFIGURAÇÕES (ATUALIZADO) ---
 const SettingsSchema = new mongoose.Schema({
     configKey: { type: String, default: "main_settings", unique: true }, 
+    
+    // Métodos de pagamento
     depositMethods: [{
-        name: String, // Ex: "M-Pesa"
-        holderName: String, // Ex: "Nome do Titular"
-        number: String, // Ex: "841234567"
+        name: String,
+        holderName: String,
+        number: String,
         isActive: { type: Boolean, default: true }
     }],
+    
+    // Bônus e Comissões
     welcomeBonus: { type: Number, default: 50 },
-    referralCommissionRate: { type: Number, default: 15 },
-    dailyCommissionRate: { type: Number, default: 5 },
+    referralCommissionRate: { type: Number, default: 30 }, // Atualizado para 30%
+    dailyCommissionRate: { type: Number, default: 15 },    // Atualizado para 15%
+
+    // --- NOVOS CAMPOS PARA LIMITES E TAXAS ---
+    depositMin: { type: Number, default: 50 },
+    depositMax: { type: Number, default: 25000 },
+    withdrawalMin: { type: Number, default: 100 },
+    withdrawalMax: { type: Number, default: 25000 },
+    withdrawalFee: { type: Number, default: 3 }, // Taxa em porcentagem (ex: 3 para 3%)
 });
 
 // Exportando todos os modelos
