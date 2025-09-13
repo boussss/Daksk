@@ -75,7 +75,7 @@ const activatePlan = asyncHandler(async (req, res) => {
     user.bonusBalance -= bonusAmountUsed;
 
     const dailyProfit = plan.dailyYieldType === 'fixed' ? plan.dailyYieldValue : (amount * plan.dailyYieldValue) / 100;
-    const startDate = new Date(); // << CORREÇÃO: Definir a data de início
+    const startDate = new Date();
     const endDate = new Date();
     endDate.setDate(startDate.getDate() + plan.durationDays);
 
@@ -86,7 +86,8 @@ const activatePlan = asyncHandler(async (req, res) => {
         dailyProfit: dailyProfit,
         startDate: startDate,
         endDate: endDate,
-        lastCollectedDate: startDate, // << CORREÇÃO: Inicializa a data da última coleta
+        // O campo lastCollectedDate fica NULO de propósito na criação.
+        // Isso é crucial para a nova lógica de coleta funcionar.
     });
     
     user.activePlanInstance = newPlanInstance._id;
@@ -157,7 +158,7 @@ const upgradePlan = asyncHandler(async (req, res) => {
     await oldPlanInstance.save();
     
     const dailyProfit = newPlan.dailyYieldType === 'fixed' ? newPlan.dailyYieldValue : (newPlan.minAmount * newPlan.dailyYieldValue) / 100;
-    const startDate = new Date(); // << CORREÇÃO: Definir a data de início
+    const startDate = new Date();
     const endDate = new Date();
     endDate.setDate(startDate.getDate() + newPlan.durationDays);
 
@@ -168,7 +169,7 @@ const upgradePlan = asyncHandler(async (req, res) => {
         dailyProfit: dailyProfit,
         startDate: startDate,
         endDate: endDate,
-        lastCollectedDate: startDate, // << CORREÇÃO: Inicializa a data da última coleta
+        // O campo lastCollectedDate fica NULO na criação.
     });
 
     user.activePlanInstance = newPlanInstance._id;
@@ -210,19 +211,42 @@ const collectDailyProfit = asyncHandler(async (req, res) => {
         await user.save();
         return res.status(400).json({ message: 'Este plano já expirou.' });
     }
+    
+    // <<<<<<<<<<<<<<<<<<<<<<<<<<< INÍCIO DA CORREÇÃO PRINCIPAL >>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    // A lógica de verificação de tempo foi reescrita para ser mais clara e corrigir o erro.
 
-    const lastCollectionBase = planInstance.lastCollectedDate || planInstance.startDate;
-    const nextCollectionTime = new Date(lastCollectionBase).getTime() + (24 * 60 * 60 * 1000);
+    let canCollect = false;
+    let timeSinceLastAction = 0;
+    const TWENTY_FOUR_HOURS_IN_MS = 24 * 60 * 60 * 1000;
 
-    if (Date.now() < nextCollectionTime) {
-        const remainingHours = ((nextCollectionTime - Date.now()) / (1000 * 60 * 60)).toFixed(1);
-        return res.status(400).json({ message: `Você já coletou hoje. Tente novamente em aproximadamente ${remainingHours} horas.` });
+    if (!planInstance.lastCollectedDate) {
+        // Este é o caso da PRIMEIRA COLETA.
+        // Verificamos se já se passaram 24h desde a DATA DE INÍCIO do plano.
+        timeSinceLastAction = Date.now() - new Date(planInstance.startDate).getTime();
+        if (timeSinceLastAction >= TWENTY_FOUR_HOURS_IN_MS) {
+            canCollect = true;
+        }
+    } else {
+        // Este é o caso de coletas SUBSEQUENTES.
+        // Verificamos se já se passaram 24h desde a ÚLTIMA COLETA.
+        timeSinceLastAction = Date.now() - new Date(planInstance.lastCollectedDate).getTime();
+        if (timeSinceLastAction >= TWENTY_FOUR_HOURS_IN_MS) {
+            canCollect = true;
+        }
     }
+
+    if (!canCollect) {
+        const timeRemaining = TWENTY_FOUR_HOURS_IN_MS - timeSinceLastAction;
+        const remainingHours = (timeRemaining / (1000 * 60 * 60)).toFixed(1);
+        return res.status(400).json({ message: `Você precisa esperar mais um pouco. Tente novamente em aproximadamente ${remainingHours} horas.` });
+    }
+    
+    // <<<<<<<<<<<<<<<<<<<<<<<<<<< FIM DA CORREÇÃO PRINCIPAL >>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     const profit = planInstance.dailyProfit;
     
     user.walletBalance += profit;
-    planInstance.lastCollectedDate = new Date();
+    planInstance.lastCollectedDate = new Date(); // Atualiza a data da última coleta para AGORA.
     planInstance.totalCollected += profit;
     
     await planInstance.save();
@@ -230,8 +254,10 @@ const collectDailyProfit = asyncHandler(async (req, res) => {
 
     await Transaction.create({ user: user._id, type: 'collection', amount: profit, description: 'Coleta de rendimento diário' });
 
+    // Lógica para pagar a comissão diária ao padrinho
     if (user.invitedBy) {
         const referrer = await User.findById(user.invitedBy);
+        // O padrinho só ganha comissão se ele também tiver um plano ativo.
         if (referrer && referrer.activePlanInstance) {
             const dailyCommission = profit * (settings.dailyCommissionRate / 100);
             referrer.walletBalance += dailyCommission;
@@ -278,7 +304,7 @@ const renewPlan = asyncHandler(async (req, res) => {
         ? planToRenew.dailyYieldValue 
         : (renewalCost * planToRenew.dailyYieldValue) / 100;
         
-    const startDate = new Date(); // << CORREÇÃO: Definir a data de início
+    const startDate = new Date();
     const endDate = new Date();
     endDate.setDate(startDate.getDate() + planToRenew.durationDays);
 
@@ -289,7 +315,7 @@ const renewPlan = asyncHandler(async (req, res) => {
         dailyProfit: dailyProfit,
         startDate: startDate,
         endDate: endDate,
-        lastCollectedDate: startDate, // << CORREÇÃO: Inicializa a data da última coleta
+        // O campo lastCollectedDate fica NULO na criação.
     });
 
     user.activePlanInstance = newInstance._id;
