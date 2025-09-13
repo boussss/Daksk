@@ -75,15 +75,18 @@ const activatePlan = asyncHandler(async (req, res) => {
     user.bonusBalance -= bonusAmountUsed;
 
     const dailyProfit = plan.dailyYieldType === 'fixed' ? plan.dailyYieldValue : (amount * plan.dailyYieldValue) / 100;
+    const startDate = new Date(); // << CORREÇÃO: Definir a data de início
     const endDate = new Date();
-    endDate.setDate(endDate.getDate() + plan.durationDays);
+    endDate.setDate(startDate.getDate() + plan.durationDays);
 
     const newPlanInstance = await PlanInstance.create({
         user: user._id,
         plan: plan._id,
         investedAmount: amount,
         dailyProfit: dailyProfit,
+        startDate: startDate,
         endDate: endDate,
+        lastCollectedDate: startDate, // << CORREÇÃO: Inicializa a data da última coleta
     });
     
     user.activePlanInstance = newPlanInstance._id;
@@ -154,15 +157,18 @@ const upgradePlan = asyncHandler(async (req, res) => {
     await oldPlanInstance.save();
     
     const dailyProfit = newPlan.dailyYieldType === 'fixed' ? newPlan.dailyYieldValue : (newPlan.minAmount * newPlan.dailyYieldValue) / 100;
+    const startDate = new Date(); // << CORREÇÃO: Definir a data de início
     const endDate = new Date();
-    endDate.setDate(endDate.getDate() + newPlan.durationDays);
+    endDate.setDate(startDate.getDate() + newPlan.durationDays);
 
     const newPlanInstance = await PlanInstance.create({
         user: user._id,
         plan: newPlan._id,
         investedAmount: newPlan.minAmount,
         dailyProfit: dailyProfit,
+        startDate: startDate,
         endDate: endDate,
+        lastCollectedDate: startDate, // << CORREÇÃO: Inicializa a data da última coleta
     });
 
     user.activePlanInstance = newPlanInstance._id;
@@ -272,15 +278,18 @@ const renewPlan = asyncHandler(async (req, res) => {
         ? planToRenew.dailyYieldValue 
         : (renewalCost * planToRenew.dailyYieldValue) / 100;
         
+    const startDate = new Date(); // << CORREÇÃO: Definir a data de início
     const endDate = new Date();
-    endDate.setDate(endDate.getDate() + planToRenew.durationDays);
+    endDate.setDate(startDate.getDate() + planToRenew.durationDays);
 
     const newInstance = await PlanInstance.create({
         user: user._id,
         plan: planToRenew._id,
         investedAmount: renewalCost,
         dailyProfit: dailyProfit,
+        startDate: startDate,
         endDate: endDate,
+        lastCollectedDate: startDate, // << CORREÇÃO: Inicializa a data da última coleta
     });
 
     user.activePlanInstance = newInstance._id;
