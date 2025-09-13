@@ -5,7 +5,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const config = require('./config');
 const { userRouter, planRouter, adminRouter, settingsRouter } = require('./routes');
-const { Admin } = require('./models'); // A importação de 'Plan' não é mais necessária aqui
+const { Admin } = require('./models');
 
 // Inicializa a aplicação Express
 const app = express();
@@ -89,6 +89,26 @@ app.use('/api/settings', settingsRouter);
 // Rota raiz para uma verificação rápida de que a API está online
 app.get('/', (req, res) => {
   res.status(200).json({ message: 'API do Chivo está online e funcionando!' });
+});
+
+// --- NOVO MIDDLEWARE DE TRATAMENTO DE ERROS GLOBAL (ATUALIZAÇÃO IMPORTANTE) ---
+app.use((err, req, res, next) => {
+  // Define o status code da resposta. Se o status já foi definido (ex: 400 por um controller), usa ele.
+  // Caso contrário, se for um erro que chegou aqui sem status definido (ex: erro inesperado 200), usa 500.
+  const statusCode = res.statusCode === 200 ? 500 : res.statusCode; 
+  res.status(statusCode);
+
+  // Loga o erro completo no console do servidor para depuração.
+  // Em produção, isso pode ser integrado a um serviço de monitoramento de erros.
+  console.error(err.stack || err.message);
+
+  // Envia uma resposta JSON com uma mensagem de erro amigável.
+  // A propriedade 'message' dos erros lançados pelos controllers já é projetada para ser amigável.
+  res.json({
+    message: err.message,
+    // Em ambiente de produção, não envie o stack. Remova o comentário abaixo para ativar:
+    // stack: process.env.NODE_ENV === 'production' ? null : err.stack,
+  });
 });
 
 

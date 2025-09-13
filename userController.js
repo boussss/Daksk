@@ -1,6 +1,7 @@
 // userController.js
 const asyncHandler = require('express-async-handler');
-const { User, Transaction, Plan, PlanInstance, Banner, Settings } = require('./models');
+const bcrypt = require('bcryptjs'); // Importar bcryptjs
+const { User, Transaction, Plan, PlanInstance, Banner, Settings, LotteryCode } = require('./models'); // Importar LotteryCode
 const { generateToken, generateUniqueUserId, generateInviteLink } = require('./utils');
 
 // @desc    Cadastrar um novo usuário
@@ -17,18 +18,22 @@ const registerUser = asyncHandler(async (req, res) => {
   const usernameExists = await User.findOne({ username });
   if (usernameExists) {
     res.status(400);
-    throw new Error('Este nome de usuário já está em uso.');
+    throw new Error('Este nome de usuário já está em uso. Por favor, escolha outro.');
   }
   const phoneExists = await User.findOne({ phone });
   if (phoneExists) {
     res.status(400);
-    throw new Error('Este número de telefone já está em uso.');
+    throw new Error('Este número de telefone já está em uso. Por favor, faça login ou use outro número.');
   }
   
   if (pin.length < 4 || pin.length > 6) {
     res.status(400);
     throw new Error('O PIN deve ter entre 4 e 6 dígitos.');
   }
+
+  // Hash do PIN antes de salvar (NOVA IMPLEMENTAÇÃO)
+  const salt = await bcrypt.genSalt(10);
+  const hashedPin = await bcrypt.hash(pin, salt);
 
   let newUserId;
   let userExists = true;
@@ -40,15 +45,20 @@ const registerUser = asyncHandler(async (req, res) => {
   let invitedByUser = null;
   if (invitedById) {
       invitedByUser = await User.findOne({ userId: invitedById });
+      if (!invitedByUser) {
+          // Se o ID do convidante não for encontrado, não impede o registro, apenas ignora o convite.
+          console.warn(`ID de convite ${invitedById} não encontrado. Registro continuará sem convidante.`);
+      }
   }
 
   const user = await User.create({
     name,
     username,
     phone,
-    pin,
+    pin: hashedPin, // Salva o PIN hashado
     userId: newUserId,
     invitedBy: invitedByUser ? invitedByUser._id : null,
+    hasActivatedPlan: false, // NOVO: Inicialmente sem plano ativado
   });
   
   const settings = await Settings.findOne({ configKey: "main_settings" });
@@ -73,7 +83,7 @@ const registerUser = asyncHandler(async (req, res) => {
     });
   } else {
     res.status(400);
-    throw new Error('Dados de usuário inválidos.');
+    throw new Error('Dados de usuário inválidos. Por favor, tente novamente.');
   }
 });
 
@@ -89,10 +99,11 @@ const loginUser = asyncHandler(async (req, res) => {
 
   const user = await User.findOne({ phone });
 
-  if (user && user.pin === pin) {
+  // Compara o PIN fornecido com o PIN hashado no banco de dados (NOVA IMPLEMENTAÇÃO)
+  if (user && (await bcrypt.compare(pin, user.pin))) {
     if (user.isBlocked) {
       res.status(403);
-      throw new Error('Esta conta está bloqueada.');
+      throw new Error('Esta conta está bloqueada. Por favor, contacte o suporte.');
     }
     res.json({
       _id: user._id,
@@ -101,7 +112,7 @@ const loginUser = asyncHandler(async (req, res) => {
     });
   } else {
     res.status(401);
-    throw new Error('Telefone ou PIN inválido.');
+    throw new Error('Telefone ou PIN inválido. Por favor, verifique suas credenciais.');
   }
 });
 
@@ -110,6 +121,10 @@ const loginUser = asyncHandler(async (req, res) => {
 // @access  Private
 const getUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id).select('-pin');
+  if (!user) {
+      res.status(404);
+      throw new Error('Usuário não encontrado.');
+  }
   res.json(user);
 });
 
@@ -150,7 +165,7 @@ const getDashboardData = asyncHandler(async (req, res) => {
         return result.length > 0 ? result[0].total : 0;
     };
 
-    const profitTypes = ['collection', 'commission'];
+    const profitTypes = ['collection', 'commission', 'lottery_win']; // ATUALIZADO: Inclui lottery_win
 
     const [todayProfit, yesterdayProfit, monthProfit, totalReferralProfit] = await Promise.all([
         getProfitSum(todayStart, new Date(todayStart.getTime() + 24 * 60 * 60 * 1000), profitTypes),
@@ -176,12 +191,12 @@ const getDashboardData = asyncHandler(async (req, res) => {
 // @access  Private
 const uploadProfilePicture = asyncHandler(async (req, res) => {
     const user = await User.findById(req.user._id);
-    if (!req.file) { res.status(400); throw new Error("Nenhuma imagem foi enviada."); }
+    if (!req.file) { res.status(400); throw new Error("Nenhuma imagem foi enviada. Por favor, selecione um arquivo."); }
     if (user) {
         user.profilePicture = req.file.path;
         await user.save();
         res.json({ message: "Foto de perfil atualizada com sucesso.", profilePictureUrl: user.profilePicture });
-    } else { res.status(404); throw new Error("Usuário não encontrado."); }
+    } else { res.status(404); throw new Error("Usuário não encontrado. Por favor, faça login novamente."); }
 });
 
 // @desc    Criar uma requisição de depósito
@@ -190,15 +205,16 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
 const createDepositRequest = asyncHandler(async (req, res) => {
     const settings = await Settings.findOne({ configKey: "main_settings" });
     if (!settings) {
-        return res.status(500).json({ message: "Configurações do sistema não encontradas." });
+        res.status(500);
+        throw new Error("Configurações do sistema não encontradas. Por favor, tente novamente mais tarde.");
     }
     
     const { amount, proofText } = req.body;
     const depositAmount = Number(amount);
 
-    if (!depositAmount || depositAmount <= 0) { 
+    if (isNaN(depositAmount) || depositAmount <= 0) { 
         res.status(400); 
-        throw new Error("O valor do depósito deve ser maior que zero."); 
+        throw new Error("O valor do depósito deve ser um número válido e maior que zero."); 
     }
     
     if (depositAmount < settings.depositMin || depositAmount > settings.depositMax) {
@@ -217,7 +233,7 @@ const createDepositRequest = asyncHandler(async (req, res) => {
             proofType: 'image',
             proofImageUrl: req.file.path 
         };
-    } else {
+    } else if (proofText) { // Garante que proofText é usado apenas se req.file não estiver presente
         transactionDetails = { 
             proofType: 'text',
             proofText: proofText 
@@ -245,21 +261,32 @@ const createDepositRequest = asyncHandler(async (req, res) => {
 const createWithdrawalRequest = asyncHandler(async (req, res) => {
     const settings = await Settings.findOne({ configKey: "main_settings" });
     if (!settings) {
-        return res.status(500).json({ message: "Configurações do sistema não encontradas." });
+        res.status(500);
+        throw new Error("Configurações do sistema não encontradas. Por favor, tente novamente mais tarde.");
     }
 
-    const { amount, paymentNumber } = req.body;
-    const user = req.user;
+    const { amount, paymentNumber, holderName, network } = req.body; // ATUALIZADO: Inclui holderName e network
+    const user = req.user; // req.user já vem do middleware protectUser
     const withdrawalAmount = Number(amount);
     
-    if (!withdrawalAmount || !paymentNumber) { 
+    if (isNaN(withdrawalAmount) || withdrawalAmount <= 0) { 
         res.status(400); 
-        throw new Error("Valor e número para pagamento são obrigatórios."); 
+        throw new Error("O valor do saque deve ser um número válido e maior que zero."); 
+    }
+    if (!paymentNumber || !holderName || !network) { // ATUALIZADO: Validar holderName e network
+        res.status(400); 
+        throw new Error("Nome do titular, número para pagamento e rede são obrigatórios."); 
     }
     
     if (withdrawalAmount < settings.withdrawalMin || withdrawalAmount > settings.withdrawalMax) {
         res.status(400);
         throw new Error(`O valor do saque deve estar entre ${settings.withdrawalMin} MT e ${settings.withdrawalMax} MT.`);
+    }
+
+    // NOVA CONDIÇÃO: Usuário só pode sacar se tiver um plano ativo ou já tiver ativado um plano
+    if (!user.activePlanInstance && !user.hasActivatedPlan) {
+        res.status(403);
+        throw new Error("Você precisa ter um plano ativo ou já ter ativado um plano anteriormente para poder sacar.");
     }
 
     if (!user.hasDeposited) { 
@@ -268,21 +295,25 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
     }
     
     const fee = (withdrawalAmount * settings.withdrawalFee) / 100;
-    const totalDeducted = withdrawalAmount + fee;
+    const totalDeducted = withdrawalAmount + fee; // Valor total a ser deduzido do saldo do usuário
     
     if (totalDeducted > user.walletBalance) { 
         res.status(400); 
-        throw new Error(`Saldo insuficiente. Você precisa de ${totalDeducted.toFixed(2)} MT para sacar ${withdrawalAmount.toFixed(2)} MT (incluindo taxa de ${fee.toFixed(2)} MT).`); 
+        throw new Error(`Saldo insuficiente na carteira. Você precisa de ${totalDeducted.toFixed(2)} MT para sacar ${withdrawalAmount.toFixed(2)} MT (incluindo taxa de ${fee.toFixed(2)} MT).`); 
     }
-    
+
+    // Dedução do saldo do usuário é feita APENAS após a aprovação do admin.
+    // Aqui, apenas registramos a transação pendente.
     const withdrawalTransaction = await Transaction.create({
         user: user._id, 
         type: 'withdrawal', 
-        amount: -withdrawalAmount,
+        amount: -withdrawalAmount, // Registra o valor negativo como a quantia solicitada
         status: 'pending',
-        description: `Saque de ${withdrawalAmount.toFixed(2)} MT`,
+        description: `Requisição de saque de ${withdrawalAmount.toFixed(2)} MT para ${network}`,
         transactionDetails: { 
             destinationNumber: paymentNumber,
+            holderName: holderName, // ATUALIZADO: Adiciona holderName
+            network: network, // ATUALIZADO: Adiciona network
             fee: fee,
             totalDeducted: totalDeducted 
         }
@@ -315,7 +346,8 @@ const getReferralData = asyncHandler(async (req, res) => {
                 user: req.user._id,
                 type: 'commission',
                 status: 'approved',
-                description: { $regex: new RegExp(referralUserId) }
+                // ATUALIZADO: Busca mais precisa para comissões
+                description: { $regex: new RegExp(`do usuário ${referralUserId}`) } 
             }},
             { $group: { _id: null, total: { $sum: '$amount' } } }
         ]);
@@ -384,8 +416,8 @@ const getWalletSummary = asyncHandler(async (req, res) => {
     }, {});
     
     const totalDeposited = summaryData.deposit || 0;
-    const totalWithdrawn = Math.abs(summaryData.withdrawal || 0);
-    const totalProfit = (summaryData.collection || 0) + (summaryData.commission || 0) + (summaryData.welcome_bonus || 0);
+    const totalWithdrawn = Math.abs(summaryData.withdrawal || 0); // Sempre positivo para o resumo
+    const totalProfit = (summaryData.collection || 0) + (summaryData.commission || 0) + (summaryData.welcome_bonus || 0) + (summaryData.lottery_win || 0); // ATUALIZADO: Inclui lottery_win
 
     res.status(200).json({
         totalDeposited,
@@ -402,6 +434,69 @@ const getUserTransactions = asyncHandler(async (req, res) => {
     res.json(transactions);
 });
 
+// @desc    Resgatar um código de sorteio
+// @route   POST /api/users/lottery/redeem
+// @access  Private
+const redeemLotteryCode = asyncHandler(async (req, res) => {
+    const { code } = req.body;
+    const user = req.user; // Usuário logado
+    
+    if (!code) {
+        res.status(400);
+        throw new Error('Por favor, forneça o código do sorteio.');
+    }
+
+    const lotteryCode = await LotteryCode.findOne({ code: code.toUpperCase() });
+
+    if (!lotteryCode) {
+        res.status(404);
+        throw new Error('Código de sorteio inválido ou não encontrado.');
+    }
+
+    if (!lotteryCode.isActive || lotteryCode.expiresAt < new Date()) {
+        res.status(400);
+        throw new Error('Este código de sorteio está expirado ou inativo.');
+    }
+
+    if (lotteryCode.currentUses >= lotteryCode.maxUses) {
+        res.status(400);
+        throw new Error('Este código de sorteio já atingiu o limite máximo de usos.');
+    }
+
+    if (lotteryCode.claimedBy.includes(user._id)) {
+        res.status(400);
+        throw new Error('Você já resgatou este código de sorteio anteriormente.');
+    }
+
+    // Gerar valor aleatório entre min e max definidos pelo admin
+    const prizeAmount = Math.floor(Math.random() * (lotteryCode.valueMax - lotteryCode.valueMin + 1)) + lotteryCode.valueMin;
+
+    user.walletBalance += prizeAmount;
+    lotteryCode.currentUses += 1;
+    lotteryCode.claimedBy.push(user._id);
+
+    await user.save();
+    await lotteryCode.save();
+
+    await Transaction.create({
+        user: user._id,
+        type: 'lottery_win',
+        amount: prizeAmount,
+        status: 'approved',
+        description: `Ganhos de sorteio com o código "${lotteryCode.code}"`,
+        transactionDetails: {
+            lotteryCode: lotteryCode.code,
+            prizeValue: prizeAmount
+        }
+    });
+
+    res.status(200).json({
+        message: `Parabéns! Você ganhou ${prizeAmount.toFixed(2)} MT com o código "${code}"!`,
+        prize: prizeAmount
+    });
+});
+
+
 module.exports = {
   registerUser,
   loginUser,
@@ -414,4 +509,5 @@ module.exports = {
   getWalletSummary,
   getHistoryData,
   getUserTransactions,
+  redeemLotteryCode, // NOVO: Exportar a função
 };

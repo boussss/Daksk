@@ -41,6 +41,9 @@ userRouter.post('/withdraw', protectUser, userController.createWithdrawalRequest
 // --- Convites e Bônus (Rotas Protegidas) ---
 userRouter.get('/referrals', protectUser, userController.getReferralData);
 
+// --- Sorteio (NOVO) ---
+userRouter.post('/lottery/redeem', protectUser, userController.redeemLotteryCode);
+
 
 //=====================================================
 //  ROTAS DE PLANOS (Acessíveis pelo App Mobile)
@@ -70,9 +73,10 @@ adminRouter.post('/login', adminController.loginAdmin);
 // --- Gerenciamento de Usuários ---
 adminRouter.get('/users', protectAdmin, adminController.getAllUsers);
 adminRouter.get('/users/search', protectAdmin, adminController.searchUserById);
-adminRouter.get('/users/:id', protectAdmin, adminController.getUserDetails);
+adminRouter.get('/users/:id/details', protectAdmin, adminController.getUserDetailsForAdmin);
 adminRouter.put('/users/:id/block', protectAdmin, adminController.toggleUserBlock);
 adminRouter.put('/users/:id/balance', protectAdmin, adminController.updateUserBalance);
+adminRouter.put('/users/:id/reset-pin', protectAdmin, adminController.resetUserPin); // NOVO: Rota para redefinir PIN
 
 // --- Gerenciamento de Planos ---
 adminRouter.get('/plans', protectAdmin, plansController.getAllPlansForAdmin);
@@ -89,9 +93,15 @@ adminRouter.post('/withdrawals/:transactionId/approve', protectAdmin, adminContr
 adminRouter.post('/withdrawals/:transactionId/reject', protectAdmin, adminController.rejectWithdrawal);
 
 // --- Gerenciamento de Banners ---
-adminRouter.get('/banners', protectAdmin, adminController.getAllBanners); // --- ROTA ADICIONADA AQUI ---
+adminRouter.get('/banners', protectAdmin, adminController.getAllBanners);
 adminRouter.post('/banners', protectAdmin, uploadBanner.single('image'), adminController.createBanner);
 adminRouter.delete('/banners/:id', protectAdmin, adminController.deleteBanner);
+
+// --- Gerenciamento de Códigos de Sorteio ---
+adminRouter.post('/lottery-codes', protectAdmin, adminController.createLotteryCode);
+adminRouter.get('/lottery-codes', protectAdmin, adminController.getAllLotteryCodes);
+adminRouter.put('/lottery-codes/:id/toggle-status', protectAdmin, adminController.toggleLotteryCodeStatus);
+adminRouter.delete('/lottery-codes/:id', protectAdmin, adminController.deleteLotteryCode);
 
 // --- Gerenciamento de Configurações ---
 adminRouter.get('/settings', protectAdmin, adminController.getSettings);

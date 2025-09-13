@@ -6,7 +6,7 @@ const UserSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
   phone: { type: String, required: true, unique: true, trim: true },
-  pin: { type: String, required: true, minlength: 4, maxlength: 6 },
+  pin: { type: String, required: true }, // Removida a validação de comprimento para permitir PINs hashados
   userId: { type: String, required: true, unique: true, minlength: 5, maxlength: 5 },
   profilePicture: { type: String, default: '' },
   walletBalance: { type: Number, default: 0 },
@@ -15,6 +15,7 @@ const UserSchema = new mongoose.Schema({
   invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   activePlanInstance: { type: mongoose.Schema.Types.ObjectId, ref: 'PlanInstance', default: null },
   hasDeposited: { type: Boolean, default: false },
+  hasActivatedPlan: { type: Boolean, default: false }, // NOVO: Para controlar a condição de saque
   isBlocked: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
 });
@@ -50,7 +51,7 @@ const PlanInstanceSchema = new mongoose.Schema({
 // --- ESQUEMA DE TRANSAÇÕES ---
 const TransactionSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  type: { type: String, enum: ['deposit', 'withdrawal', 'investment', 'collection', 'commission', 'welcome_bonus'], required: true },
+  type: { type: String, enum: ['deposit', 'withdrawal', 'investment', 'collection', 'commission', 'welcome_bonus', 'lottery_win'], required: true }, // ATUALIZADO: Adicionado 'lottery_win'
   amount: { type: Number, required: true },
   status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved' },
   description: String,
@@ -58,7 +59,8 @@ const TransactionSchema = new mongoose.Schema({
     type: Object,
     // Exemplos:
     // Depósito: { proofType: 'image', proofUrl: 'url' }
-    // Saque: { destinationNumber: '84...', fee: 30, totalDeducted: 1030 }
+    // Saque: { destinationNumber: '84...', holderName: 'Nome Completo', network: 'M-Pesa', fee: 30, totalDeducted: 1030 }
+    // Sorteio: { lotteryCode: 'XXXXX', prizeValue: 50 }
   },
   createdAt: { type: Date, default: Date.now },
 });
@@ -76,7 +78,20 @@ const BannerSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
 });
 
-// --- ESQUEMA DE CONFIGURAÇÕES (ATUALIZADO) ---
+// --- NOVO ESQUEMA: CÓDIGO DE SORTEIO ---
+const LotteryCodeSchema = new mongoose.Schema({
+    code: { type: String, required: true, unique: true, uppercase: true },
+    valueMin: { type: Number, required: true, min: 1 }, // Valor mínimo que o usuário pode ganhar
+    valueMax: { type: Number, required: true, min: 1 }, // Valor máximo que o usuário pode ganhar
+    maxUses: { type: Number, required: true, min: 1 }, // Quantas vezes este código pode ser usado no total
+    currentUses: { type: Number, default: 0 }, // Contador de usos atuais
+    expiresAt: { type: Date, required: true },
+    isActive: { type: Boolean, default: true },
+    claimedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // Usuários que já resgataram
+    createdAt: { type: Date, default: Date.now },
+});
+
+// --- ESQUEMA DE CONFIGURAÇÕES ---
 const SettingsSchema = new mongoose.Schema({
     configKey: { type: String, default: "main_settings", unique: true }, 
     
@@ -90,10 +105,10 @@ const SettingsSchema = new mongoose.Schema({
     
     // Bônus e Comissões
     welcomeBonus: { type: Number, default: 50 },
-    referralCommissionRate: { type: Number, default: 30 }, // Atualizado para 30%
-    dailyCommissionRate: { type: Number, default: 15 },    // Atualizado para 15%
+    referralCommissionRate: { type: Number, default: 30 },
+    dailyCommissionRate: { type: Number, default: 15 },
 
-    // --- NOVOS CAMPOS PARA LIMITES E TAXAS ---
+    // Limites e Taxas
     depositMin: { type: Number, default: 50 },
     depositMax: { type: Number, default: 25000 },
     withdrawalMin: { type: Number, default: 100 },
@@ -108,6 +123,7 @@ const PlanInstance = mongoose.model('PlanInstance', PlanInstanceSchema);
 const Transaction = mongoose.model('Transaction', TransactionSchema);
 const Admin = mongoose.model('Admin', AdminSchema);
 const Banner = mongoose.model('Banner', BannerSchema);
+const LotteryCode = mongoose.model('LotteryCode', LotteryCodeSchema); // NOVO: Exportando o modelo
 const Settings = mongoose.model('Settings', SettingsSchema);
 
-module.exports = { User, Plan, PlanInstance, Transaction, Admin, Banner, Settings };
+module.exports = { User, Plan, PlanInstance, Transaction, Admin, Banner, LotteryCode, Settings };
