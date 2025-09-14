@@ -4,7 +4,8 @@ const bcrypt = require('bcryptjs');
 const { Admin, User, Transaction, PlanInstance, Banner, Settings, LotteryCode } = require('./models');
 const { generateToken, generateLotteryCode } = require('./utils');
 // NOVO: Importar as funções de normalização do userController
-const { standardizePhoneNumber, generatePhoneQueryArray } = require('./userController');
+// CORRIGIDO: Importar cleanAndValidatePhoneForDB em vez de standardizePhoneNumber
+const { cleanAndValidatePhoneForDB, generatePhoneQueryArray } = require('./userController');
 
 // @desc    Autenticar (login) o administrador
 // @route   POST /api/admin/login
@@ -231,7 +232,8 @@ const updateUserPhoneNumber = asyncHandler(async (req, res) => {
     }
     
     try {
-        const newPhone = standardizePhoneNumber(rawNewPhone); // PADRONIZAÇÃO AQUI
+        // CORRIGIDO: Usar cleanAndValidatePhoneForDB
+        const newPhone = cleanAndValidatePhoneForDB(rawNewPhone);
     
         const user = await User.findById(userId);
         if (!user) {
@@ -246,7 +248,7 @@ const updateUserPhoneNumber = asyncHandler(async (req, res) => {
             throw new Error('Este número de telefone já está em uso por outro usuário.');
         }
 
-        user.phone = newPhone; // Salva o número padronizado ("+258XXXXXXXXX")
+        user.phone = newPhone; // Salva o número padronizado
         await user.save();
 
         res.json({ message: `Número de telefone do usuário ${user.userId} atualizado para ${newPhone} com sucesso.`, user });
@@ -583,7 +585,7 @@ const updateSettings = asyncHandler(async (req, res) => {
                 return {
                     name: method.name,
                     holderName: method.holderName,
-                    number: standardizePhoneNumber(method.number), // PADRONIZAÇÃO AQUI
+                    number: cleanAndValidatePhoneForDB(method.number), // PADRONIZAÇÃO AQUI
                     isActive: method.isActive
                 };
             } catch (error) {
@@ -635,5 +637,5 @@ module.exports = {
     deleteLotteryCode,
     getSettings,
     updateSettings,
-    getActivePlanUsersCount, // NOVO: Exporta a função
+    getActivePlanUsersCount,
 };
