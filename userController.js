@@ -9,12 +9,12 @@ const { generateToken, generateUniqueUserId, generateInviteLink } = require('./u
  * Remove caracteres não-dígitos (exceto o '+' se for o primeiro).
  * Retorna o número validado no formato que deve ser salvo (ex: "841234567" ou "+258841234567"),
  * respeitando a presença/ausência do prefixo na entrada original, mas garantindo 9 dígitos após o prefixo.
- * @param {string | null | undefined} rawPhone - O número de telefone como recebido (pode ser "+", "258", espaços, null, undefined).
+ * @param {string | null | undefined} rawPhone - O número de telefone como recebido (pode ter "+", "258", espaços, null, undefined).
  * @returns {string} O número de telefone limpo e validado para armazenamento.
  * @throws {Error} Se o número não for um formato válido de telefone de Moçambique.
  */
 const cleanAndValidatePhoneForDB = (rawPhone) => {
-    // Garantir que rawPhone é uma string antes de operar
+    // Garantir que rawPhone é uma string antes de operar, e trim para remover espaços externos
     let cleaned = String(rawPhone || '').trim(); 
 
     if (cleaned.length === 0) {
@@ -58,8 +58,8 @@ const cleanAndValidatePhoneForDB = (rawPhone) => {
  * @throws {Error} Se o número não puder ser limpo para um formato base de 9 dígitos.
  */
 const generatePhoneQueryArray = (rawPhone) => {
-    // Garantir que rawPhone é uma string antes de operar
-    let cleanedBasePhone = String(rawPhone || '').replace(/\D/g, ''); // Remove tudo que não for dígito
+    // Garantir que rawPhone é uma string antes de operar, e trim para remover espaços externos
+    let cleanedBasePhone = String(rawPhone || '').trim(); 
     let queryPossibilities = [];
 
     // Tenta extrair a base de 9 dígitos a partir de várias entradas
@@ -95,13 +95,12 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('Por favor, preencha todos os campos obrigatórios.');
   }
 
-  // NOVO: Usar cleanAndValidatePhoneForDB para padronizar e validar o número para armazenamento
   let phone;
   try {
-      phone = cleanAndValidatePhoneForDB(rawPhone);
+      phone = cleanAndValidatePhoneForDB(rawPhone); // Chama a função, que pode lançar erro
   } catch (error) {
       res.status(400);
-      throw new Error(`Número de telefone inválido: ${error.message}`);
+      throw new Error(`Número de telefone inválido: ${error.message}`); // Garante que error.message é uma string
   }
 
   const usernameExists = await User.findOne({ username });
@@ -110,8 +109,14 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('Este nome de usuário já está em uso. Por favor, escolha outro.');
   }
   
-  // ATUALIZADO: Usar generatePhoneQueryArray para verificar a existência flexivelmente
-  const phoneExists = await User.findOne({ phone: { $in: generatePhoneQueryArray(rawPhone) } });
+  let phoneExists;
+  try {
+      phoneExists = await User.findOne({ phone: { $in: generatePhoneQueryArray(rawPhone) } }); // Chama a função, que pode lançar erro
+  } catch (error) {
+      res.status(400);
+      throw new Error(`Erro na validação do telefone: ${error.message}`); // Garante que error.message é uma string
+  }
+
   if (phoneExists) {
     res.status(400);
     throw new Error('Este número de telefone já está em uso. Por favor, faça login ou use outro número.');
@@ -186,14 +191,13 @@ const loginUser = asyncHandler(async (req, res) => {
     throw new Error('Por favor, forneça o número de telefone e o PIN.');
   }
 
-  // ATUALIZADO: Usar generatePhoneQueryArray para buscar flexivelmente
   let user;
   try {
-      const phoneQueryArray = generatePhoneQueryArray(rawPhone);
+      const phoneQueryArray = generatePhoneQueryArray(rawPhone); // Chama a função, que pode lançar erro
       user = await User.findOne({ phone: { $in: phoneQueryArray } });
   } catch (error) {
       res.status(400);
-      throw new Error(`Número de telefone inválido para login: ${error.message}`);
+      throw new Error(`Número de telefone inválido para login: ${error.message}`); // Garante que error.message é uma string
   }
 
   if (user && (await bcrypt.compare(pin, user.pin))) {
@@ -374,10 +378,9 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
         throw new Error("Nome do titular, número para pagamento e rede são obrigatórios."); 
     }
     
-    // NOVO: Usar cleanAndValidatePhoneForDB para padronizar e validar o número
     let paymentNumber;
     try {
-        paymentNumber = cleanAndValidatePhoneForDB(rawPaymentNumber);
+        paymentNumber = cleanAndValidatePhoneForDB(rawPaymentNumber); // NOVO: Validação do número de pagamento
     } catch (error) {
         res.status(400);
         throw new Error(`Número de telefone inválido para saque: ${error.message}`);
