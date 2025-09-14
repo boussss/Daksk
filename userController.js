@@ -64,11 +64,28 @@ const generatePhoneQueryArray = (rawPhone) => {
 
     // Tenta extrair a base de 9 dígitos a partir de várias entradas
     let nineDigitsOnly = '';
-    if (cleanedBasePhone.startsWith('258') && cleanedBasePhone.length >= 12) { // "258" + 9 dígitos
+    // Primeiro tenta o formato "+258XXXXXXXXX"
+    if (cleanedBasePhone.startsWith('+258') && cleanedBasePhone.length === 13) {
+        nineDigitsOnly = cleanedBasePhone.substring(4);
+    } 
+    // Depois, tenta o formato "258XXXXXXXXX" (se alguém digitou sem o +)
+    else if (cleanedBasePhone.startsWith('258') && cleanedBasePhone.length === 12) {
         nineDigitsOnly = cleanedBasePhone.substring(3);
-    } else if (cleanedBasePhone.length === 9) { // Apenas 9 dígitos
+    }
+    // Finalmente, tenta o formato "XXXXXXXXX" (apenas 9 dígitos)
+    else if (cleanedBasePhone.length === 9) { 
         nineDigitsOnly = cleanedBasePhone;
     }
+    // Se nenhum dos padrões acima corresponder, tenta limpar apenas os dígitos e ver se tem 9
+    else {
+        let tempDigits = cleanedBasePhone.replace(/\D/g, '');
+        if (tempDigits.length === 9) {
+            nineDigitsOnly = tempDigits;
+        } else if (tempDigits.startsWith('258') && tempDigits.length === 12) {
+            nineDigitsOnly = tempDigits.substring(3);
+        }
+    }
+
 
     if (nineDigitsOnly.length !== 9 || !/^\d{9}$/.test(nineDigitsOnly)) {
         // Se não conseguirmos uma base de 9 dígitos, o número é inválido para consulta
@@ -90,6 +107,10 @@ const generatePhoneQueryArray = (rawPhone) => {
 const registerUser = asyncHandler(async (req, res) => {
   const { name, username, phone: rawPhone, pin, invitedById } = req.body;
 
+  console.log('--- Tentativa de Registro de Usuário ---');
+  console.log('rawPhone (recebido do frontend):', rawPhone);
+  console.log('PIN (recebido do frontend):', pin); // NÃO LOGUE O PIN EM PRODUÇÃO REAL! Apenas para depuração.
+
   if (!name || !username || !rawPhone || !pin) {
     res.status(400);
     throw new Error('Por favor, preencha todos os campos obrigatórios.');
@@ -98,7 +119,9 @@ const registerUser = asyncHandler(async (req, res) => {
   let phone;
   try {
       phone = cleanAndValidatePhoneForDB(rawPhone); // Chama a função, que pode lançar erro
+      console.log('Telefone padronizado para salvar no DB:', phone);
   } catch (error) {
+      console.error('Erro na normalização do telefone durante o registro:', error.message);
       res.status(400);
       throw new Error(`Número de telefone inválido: ${error.message}`); // Garante que error.message é uma string
   }
@@ -111,12 +134,11 @@ const registerUser = asyncHandler(async (req, res) => {
   
   let phoneExists;
   try {
-      // Usar o número já limpo e validado 'phone' ou 'rawPhone' que vem do input?
-      // Usar 'phone' é mais consistente, pois já passou pela validação rigorosa.
       phoneExists = await User.findOne({ phone: { $in: generatePhoneQueryArray(phone) } }); 
   } catch (error) {
+      console.error('Erro na validação do telefone para existência durante o registro:', error.message);
       res.status(400);
-      throw new Error(`Erro na validação do telefone: ${error.message}`); // Garante que error.message é uma string
+      throw new Error(`Erro interno de validação de telefone: ${error.message}`);
   }
 
   if (phoneExists) {
@@ -124,13 +146,15 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('Este número de telefone já está em uso. Por favor, faça login ou use outro número.');
   }
   
-  if (pin.length < 4 || pin.length > 6) {
+  if (pin.length < 4 || pin.length > 6 || !/^\d+$/.test(pin)) { // Adicionado validação para apenas dígitos
     res.status(400);
-    throw new Error('O PIN deve ter entre 4 e 6 dígitos.');
+    throw new Error('O PIN deve conter apenas números, entre 4 e 6 dígitos.');
   }
 
   const salt = await bcrypt.genSalt(10);
   const hashedPin = await bcrypt.hash(pin, salt);
+  console.log('PIN original:', pin); // NÃO LOGUE ISSO EM PRODUÇÃO!
+  console.log('PIN hashed (para salvar no DB):', hashedPin);
 
   let newUserId;
   let userExists = true;
@@ -150,12 +174,13 @@ const registerUser = asyncHandler(async (req, res) => {
   const user = await User.create({
     name,
     username,
-    phone, // Salva o telefone padronizado (com ou sem "+258" conforme a entrada do admin)
+    phone, // Salva o telefone padronizado
     pin: hashedPin,
     userId: newUserId,
     invitedBy: invitedByUser ? invitedByUser._id : null,
     hasActivatedPlan: false,
   });
+  console.log('Novo usuário criado (telefone e PIN hash no DB):', user.phone, user.pin);
   
   const settings = await Settings.findOne({ configKey: "main_settings" });
   const welcomeBonusAmount = settings ? settings.welcomeBonus : 50;
@@ -188,24 +213,41 @@ const registerUser = asyncHandler(async (req, res) => {
 // @access  Public
 const loginUser = asyncHandler(async (req, res) => {
   const { phone: rawPhone, pin } = req.body;
+
+  console.log('--- Tentativa de Login de Usuário ---');
+  console.log('rawPhone (recebido do frontend):', rawPhone);
+  console.log('PIN (recebido do frontend):', pin); // NÃO LOGUE O PIN EM PRODUÇÃO REAL! Apenas para depuração.
+
   if (!rawPhone || !pin) {
     res.status(400);
     throw new Error('Por favor, forneça o número de telefone e o PIN.');
+  }
+  
+  if (pin.length < 4 || pin.length > 6 || !/^\d+$/.test(pin)) { // Adicionado validação para apenas dígitos
+    res.status(400);
+    throw new Error('O PIN deve conter apenas números, entre 4 e 6 dígitos.');
   }
 
   let user;
   let phoneQueryArray;
   try {
-      phoneQueryArray = generatePhoneQueryArray(rawPhone); // Chama a função, que pode lançar erro
+      phoneQueryArray = generatePhoneQueryArray(rawPhone);
+      console.log('Array de consulta de telefone para o DB:', phoneQueryArray);
+
       user = await User.findOne({ phone: { $in: phoneQueryArray } });
+      console.log('Usuário encontrado no DB:', user ? user.username : 'Nenhum');
+
   } catch (error) {
-      res.status(400); // Se generatePhoneQueryArray lançar erro, é um input inválido
+      console.error('Erro na normalização/busca do telefone durante o login:', error.message);
+      res.status(400);
       throw new Error(`Número de telefone inválido para login: ${error.message}`);
   }
 
   // NOVO: Garantir que user.pin é uma string para bcrypt.compare
-  if (user && user.pin && (await bcrypt.compare(pin, user.pin))) { 
+  if (user && user.pin && (await bcrypt.compare(pin, user.pin))) {
+    console.log('Resultado da comparação do PIN: SUCESSO');
     if (user.isBlocked) {
+      console.log('Usuário bloqueado, acesso negado.');
       res.status(403);
       throw new Error('Esta conta está bloqueada. Por favor, contacte o suporte.');
     }
@@ -215,9 +257,16 @@ const loginUser = asyncHandler(async (req, res) => {
       token: generateToken(user._id),
     });
   } else {
+    console.log('Resultado da comparação do PIN: FALHA (Usuário não encontrado ou PIN incorreto)');
+    console.log('PIN recebido:', pin); // NÃO LOGUE ISSO EM PRODUÇÃO!
+    console.log('PIN hash no DB:', user ? user.pin : 'N/A');
+    if (user && user.pin) {
+        // Teste manual para entender o bcrypt.compare
+        const bcryptResult = await bcrypt.compare(pin, user.pin);
+        console.log('Tentando bcrypt.compare manualmente:', bcryptResult);
+    }
     res.status(401);
-    // Mensagem genérica para segurança, sem revelar se o telefone existe ou se o PIN está errado
-    throw new Error('Telefone ou PIN inválido. Por favor, verifique suas credenciais.');
+    throw new Error('Telefone ou PIN inválido. Por favor, verifique suas credenciais.'); // Linha 220
   }
 });
 
