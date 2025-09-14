@@ -9,21 +9,22 @@ const { generateToken, generateUniqueUserId, generateInviteLink } = require('./u
  * Remove caracteres não-dígitos (exceto o '+' se for o primeiro).
  * Retorna o número validado no formato que deve ser salvo (ex: "841234567" ou "+258841234567"),
  * respeitando a presença/ausência do prefixo na entrada original, mas garantindo 9 dígitos após o prefixo.
- * @param {string} rawPhone - O número de telefone como recebido (pode ter "+", "258", espaços).
+ * @param {string | null | undefined} rawPhone - O número de telefone como recebido (pode ser "+", "258", espaços, null, undefined).
  * @returns {string} O número de telefone limpo e validado para armazenamento.
  * @throws {Error} Se o número não for um formato válido de telefone de Moçambique.
  */
 const cleanAndValidatePhoneForDB = (rawPhone) => {
-    if (!rawPhone) {
+    // Garantir que rawPhone é uma string antes de operar
+    let cleaned = String(rawPhone || '').trim(); 
+
+    if (cleaned.length === 0) {
         throw new Error("Número de telefone não pode ser vazio.");
     }
-
-    let cleaned = String(rawPhone).replace(/\s/g, ''); // Remove apenas espaços iniciais
     
     // Permitir '+' apenas no início
     if (cleaned.startsWith('+')) {
         let digitsOnly = cleaned.substring(1).replace(/\D/g, ''); // Remove não-dígitos após o '+'
-        if (!digitsOnly) { // Se não houver dígitos após o '+'
+        if (!digitsOnly) { 
             throw new Error("Número de telefone inválido. '+' deve ser seguido por dígitos.");
         }
         cleaned = `+${digitsOnly}`;
@@ -52,12 +53,13 @@ const cleanAndValidatePhoneForDB = (rawPhone) => {
  * Função auxiliar para gerar um array de possíveis formatos de um número de telefone
  * para usar em consultas (login, verificar existência), acomodando dados antigos e novos.
  * Esta função é para ser flexível na busca.
- * @param {string} rawPhone - O número de telefone como recebido (pode ter "+", "258", espaços).
+ * @param {string | null | undefined} rawPhone - O número de telefone como recebido.
  * @returns {string[]} Um array de strings com formatos de telefone para buscar no DB.
  * @throws {Error} Se o número não puder ser limpo para um formato base de 9 dígitos.
  */
 const generatePhoneQueryArray = (rawPhone) => {
-    let cleanedBasePhone = String(rawPhone).replace(/\D/g, ''); // Remove tudo que não for dígito
+    // Garantir que rawPhone é uma string antes de operar
+    let cleanedBasePhone = String(rawPhone || '').replace(/\D/g, ''); // Remove tudo que não for dígito
     let queryPossibilities = [];
 
     // Tenta extrair a base de 9 dígitos a partir de várias entradas
@@ -94,7 +96,13 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 
   // NOVO: Usar cleanAndValidatePhoneForDB para padronizar e validar o número para armazenamento
-  const phone = cleanAndValidatePhoneForDB(rawPhone);
+  let phone;
+  try {
+      phone = cleanAndValidatePhoneForDB(rawPhone);
+  } catch (error) {
+      res.status(400);
+      throw new Error(`Número de telefone inválido: ${error.message}`);
+  }
 
   const usernameExists = await User.findOne({ username });
   if (usernameExists) {
@@ -179,7 +187,14 @@ const loginUser = asyncHandler(async (req, res) => {
   }
 
   // ATUALIZADO: Usar generatePhoneQueryArray para buscar flexivelmente
-  const user = await User.findOne({ phone: { $in: generatePhoneQueryArray(rawPhone) } });
+  let user;
+  try {
+      const phoneQueryArray = generatePhoneQueryArray(rawPhone);
+      user = await User.findOne({ phone: { $in: phoneQueryArray } });
+  } catch (error) {
+      res.status(400);
+      throw new Error(`Número de telefone inválido para login: ${error.message}`);
+  }
 
   if (user && (await bcrypt.compare(pin, user.pin))) {
     if (user.isBlocked) {
@@ -359,7 +374,15 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
         throw new Error("Nome do titular, número para pagamento e rede são obrigatórios."); 
     }
     
-    const paymentNumber = cleanAndValidatePhoneForDB(rawPaymentNumber); // PADRONIZAÇÃO AQUI
+    // NOVO: Usar cleanAndValidatePhoneForDB para padronizar e validar o número
+    let paymentNumber;
+    try {
+        paymentNumber = cleanAndValidatePhoneForDB(rawPaymentNumber);
+    } catch (error) {
+        res.status(400);
+        throw new Error(`Número de telefone inválido para saque: ${error.message}`);
+    }
+
 
     if (withdrawalAmount < settings.withdrawalMin || withdrawalAmount > settings.withdrawalMax) {
         res.status(400);
