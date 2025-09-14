@@ -3,8 +3,6 @@ const asyncHandler = require('express-async-handler');
 const bcrypt = require('bcryptjs');
 const { Admin, User, Transaction, PlanInstance, Banner, Settings, LotteryCode } = require('./models');
 const { generateToken, generateLotteryCode } = require('./utils');
-// NOVO: Importar as funções de normalização do userController
-const { standardizePhoneNumber, generatePhoneQueryArray } = require('./userController');
 
 // @desc    Autenticar (login) o administrador
 // @route   POST /api/admin/login
@@ -31,7 +29,6 @@ const loginAdmin = asyncHandler(async (req, res) => {
 // @route   GET /api/admin/users
 // @access  Admin
 const getAllUsers = asyncHandler(async (req, res) => {
-    // ATUALIZADO: Buscar todos os usuários
     const users = await User.find({}).select('-pin');
     res.json(users);
 });
@@ -111,7 +108,7 @@ const getUserDetailsForAdmin = asyncHandler(async (req, res) => {
         }},
         { $group: { _id: null, totalAmount: { $sum: '$amount' } } }
     ]);
-    const totalOwnReferralEarnings = totalEarningsFromOwnReferrals.length > 0 ? totalEarningsFromOwnReferrals[0].totalAmount : 0;
+    const totalOwnReferralEarnings = totalEarningsFromOwnReferrals.length > 0 ? totalEarningsFromOwnReferralEarnings[0].totalAmount : 0;
 
 
     const formattedReferrals = await Promise.all(referrals.map(async (ref) => {
@@ -231,25 +228,30 @@ const updateUserPhoneNumber = asyncHandler(async (req, res) => {
         throw new Error('Por favor, forneça o novo número de telefone.');
     }
     
-    const newPhone = standardizePhoneNumber(rawNewPhone); // PADRONIZAÇÃO AQUI
+    try {
+        const newPhone = standardizePhoneNumber(rawNewPhone); // NORMALIZAÇÃO AQUI
+    
+        const user = await User.findById(userId);
+        if (!user) {
+            res.status(404);
+            throw new Error('Usuário não encontrado.');
+        }
 
-    const user = await User.findById(userId);
-    if (!user) {
-        res.status(404);
-        throw new Error('Usuário não encontrado.');
-    }
+        // Verificar se o novo número (padronizado) já existe para outro usuário
+        const phoneExistsForAnotherUser = await User.findOne({ phone: newPhone, _id: { $ne: userId } });
+        if (phoneExistsForAnotherUser) {
+            res.status(400);
+            throw new Error('Este número de telefone já está em uso por outro usuário.');
+        }
 
-    // Verificar se o novo número (padronizado) já existe para outro usuário
-    const phoneExistsForAnotherUser = await User.findOne({ phone: newPhone, _id: { $ne: userId } });
-    if (phoneExistsForAnotherUser) {
+        user.phone = newPhone; // Salva o número padronizado ("+258XXXXXXXXX")
+        await user.save();
+
+        res.json({ message: `Número de telefone do usuário ${user.userId} atualizado para ${newPhone} com sucesso.`, user });
+    } catch (error) {
         res.status(400);
-        throw new Error('Este número de telefone já está em uso por outro usuário.');
+        throw new Error(`Formato de número de telefone inválido: ${error.message}`);
     }
-
-    user.phone = newPhone; // Salva o número padronizado ("+258XXXXXXXXX")
-    await user.save();
-
-    res.json({ message: `Número de telefone do usuário ${user.userId} atualizado para ${newPhone} com sucesso.`, user });
 });
 
 // @desc    Apagar a conta de um usuário
@@ -276,14 +278,10 @@ const deleteUser = asyncHandler(async (req, res) => {
     res.json({ message: 'Conta de usuário, planos e transações associadas deletados com sucesso.' });
 });
 
-
-// --- GERENCIAMENTO DE TRANSAÇÕES ---
-
 // @desc    Obter todas as requisições de depósito pendentes
 // @route   GET /api/admin/deposits
 // @access  Admin
 const getPendingDeposits = asyncHandler(async (req, res) => {
-    // ATUALIZADO: A populção de 'user' agora busca o telefone (que estará no formato padronizado)
     const deposits = await Transaction.find({ type: 'deposit', status: 'pending' }).populate('user', 'userId name phone');
     res.json(deposits);
 });
@@ -332,7 +330,6 @@ const rejectDeposit = asyncHandler(async (req, res) => {
 // @route   GET /api/admin/withdrawals
 // @access  Admin
 const getPendingWithdrawals = asyncHandler(async (req, res) => {
-    // ATUALIZADO: A populção de 'user' agora busca o telefone (que estará no formato padronizado)
     const withdrawals = await Transaction.find({ type: 'withdrawal', status: 'pending' })
                                          .populate('user', 'userId name phone walletBalance hasActivatedPlan'); 
     res.json(withdrawals);
@@ -461,7 +458,7 @@ const createLotteryCode = asyncHandler(async (req, res) => {
 
     let uniqueCode = await generateLotteryCode();
     while (await LotteryCode.findOne({ code: uniqueCode })) {
-        uniqueCode = await generateLotteryCode();
+        uniqueCode = generateLotteryCode();
     }
 
     const expiresAt = new Date(Date.now() + parsedDurationHours * 60 * 60 * 1000);
@@ -493,7 +490,7 @@ const toggleLotteryCodeStatus = asyncHandler(async (req, res) => {
     const code = await LotteryCode.findById(req.params.id);
     if (!code) {
         res.status(404);
-        throw new new Error('Código de sorteio não encontrado.');
+        throw new Error('Código de sorteio não encontrado.');
     }
     code.isActive = !code.isActive;
     await code.save();
@@ -579,13 +576,12 @@ const updateSettings = asyncHandler(async (req, res) => {
     }
 
     if (Array.isArray(depositMethods)) {
-        // NORMALIZAÇÃO AQUI para cada número de método de depósito
         validatedBody.depositMethods = depositMethods.map(method => {
             try {
                 return {
                     name: method.name,
                     holderName: method.holderName,
-                    number: standardizePhoneNumber(method.number), // PADRONIZAÇÃO AQUI
+                    number: standardizePhoneNumber(method.number), // NORMALIZAÇÃO AQUI
                     isActive: method.isActive
                 };
             } catch (error) {
@@ -601,6 +597,14 @@ const updateSettings = asyncHandler(async (req, res) => {
         { new: true, upsert: true, runValidators: true }
     );
     res.json({ message: 'Configurações atualizadas com sucesso!', settings: updatedSettings });
+});
+
+// NOVO: Obter contagem de usuários com planos ativos (para o dashboard)
+// @route   GET /api/admin/users/active-plans-count
+// @access  Admin
+const getActivePlanUsersCount = asyncHandler(async (req, res) => {
+    const count = await User.countDocuments({ activePlanInstance: { $ne: null } });
+    res.json({ count });
 });
 
 
@@ -629,4 +633,5 @@ module.exports = {
     deleteLotteryCode,
     getSettings,
     updateSettings,
+    getActivePlanUsersCount, // NOVO: Exporta a função
 };
