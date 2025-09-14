@@ -5,8 +5,19 @@ const mongoose = require('mongoose');
 const UserSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
-  phone: { type: String, required: true, unique: true, trim: true },
-  pin: { type: String, required: true }, // Removida a validação de comprimento para permitir PINs hashados
+  phone: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    // NOVO: Adicionado validador para garantir que o telefone tem 9 dígitos numéricos
+    validate: {
+      validator: function(v) {
+        return /^\d{9}$/.test(v);
+      },
+      message: props => `${props.value} não é um número de telefone válido (deve conter 9 dígitos numéricos)!`
+    }
+  },
   userId: { type: String, required: true, unique: true, minlength: 5, maxlength: 5 },
   profilePicture: { type: String, default: '' },
   walletBalance: { type: Number, default: 0 },
@@ -15,7 +26,7 @@ const UserSchema = new mongoose.Schema({
   invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   activePlanInstance: { type: mongoose.Schema.Types.ObjectId, ref: 'PlanInstance', default: null },
   hasDeposited: { type: Boolean, default: false },
-  hasActivatedPlan: { type: Boolean, default: false }, // NOVO: Para controlar a condição de saque
+  hasActivatedPlan: { type: Boolean, default: false },
   isBlocked: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
 });
@@ -51,16 +62,12 @@ const PlanInstanceSchema = new mongoose.Schema({
 // --- ESQUEMA DE TRANSAÇÕES ---
 const TransactionSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  type: { type: String, enum: ['deposit', 'withdrawal', 'investment', 'collection', 'commission', 'welcome_bonus', 'lottery_win'], required: true }, // ATUALIZADO: Adicionado 'lottery_win'
+  type: { type: String, enum: ['deposit', 'withdrawal', 'investment', 'collection', 'commission', 'welcome_bonus', 'lottery_win'], required: true },
   amount: { type: Number, required: true },
   status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved' },
   description: String,
   transactionDetails: {
-    type: Object,
-    // Exemplos:
-    // Depósito: { proofType: 'image', proofUrl: 'url' }
-    // Saque: { destinationNumber: '84...', holderName: 'Nome Completo', network: 'M-Pesa', fee: 30, totalDeducted: 1030 }
-    // Sorteio: { lotteryCode: 'XXXXX', prizeValue: 50 }
+    type: Object, // Mantido como Object para flexibilidade, a validação de destinationNumber será no controlador
   },
   createdAt: { type: Date, default: Date.now },
 });
@@ -81,13 +88,13 @@ const BannerSchema = new mongoose.Schema({
 // --- NOVO ESQUEMA: CÓDIGO DE SORTEIO ---
 const LotteryCodeSchema = new mongoose.Schema({
     code: { type: String, required: true, unique: true, uppercase: true },
-    valueMin: { type: Number, required: true, min: 1 }, // Valor mínimo que o usuário pode ganhar
-    valueMax: { type: Number, required: true, min: 1 }, // Valor máximo que o usuário pode ganhar
-    maxUses: { type: Number, required: true, min: 1 }, // Quantas vezes este código pode ser usado no total
-    currentUses: { type: Number, default: 0 }, // Contador de usos atuais
+    valueMin: { type: Number, required: true, min: 1 },
+    valueMax: { type: Number, required: true, min: 1 },
+    maxUses: { type: Number, required: true, min: 1 },
+    currentUses: { type: Number, default: 0 },
     expiresAt: { type: Date, required: true },
     isActive: { type: Boolean, default: true },
-    claimedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // Usuários que já resgataram
+    claimedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     createdAt: { type: Date, default: Date.now },
 });
 
@@ -99,7 +106,17 @@ const SettingsSchema = new mongoose.Schema({
     depositMethods: [{
         name: String,
         holderName: String,
-        number: String,
+        number: {
+          type: String,
+          // NOVO: Validador para garantir que os números dos métodos de depósito também são 9 dígitos
+          validate: {
+            validator: function(v) {
+              return /^\d{9}$/.test(v);
+            },
+            message: props => `${props.value} não é um número de telefone válido para método de depósito (deve conter 9 dígitos numéricos)!`
+          },
+          required: true // Torna obrigatório para integridade dos dados
+        },
         isActive: { type: Boolean, default: true }
     }],
     
@@ -113,7 +130,7 @@ const SettingsSchema = new mongoose.Schema({
     depositMax: { type: Number, default: 25000 },
     withdrawalMin: { type: Number, default: 100 },
     withdrawalMax: { type: Number, default: 25000 },
-    withdrawalFee: { type: Number, default: 3 }, // Taxa em porcentagem (ex: 3 para 3%)
+    withdrawalFee: { type: Number, default: 3 },
 });
 
 // Exportando todos os modelos

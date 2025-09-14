@@ -29,15 +29,16 @@ const loginAdmin = asyncHandler(async (req, res) => {
 // @route   GET /api/admin/users
 // @access  Admin
 const getAllUsers = asyncHandler(async (req, res) => {
+    // ATUALIZADO: Buscar todos os usuários e selecionar o telefone (9 dígitos)
     const users = await User.find({}).select('-pin');
     res.json(users);
 });
 
-// @desc    Pesquisar usuário por ID de 5 dígitos ou número de telefone (ATUALIZADO)
+// @desc    Pesquisar usuário por ID de 5 dígitos ou número de telefone
 // @route   GET /api/admin/users/search
 // @access  Admin
 const searchUsers = asyncHandler(async (req, res) => {
-    const { query } = req.query; // Usa um único parâmetro 'query'
+    const { query } = req.query;
     if (!query) {
         res.status(400);
         throw new Error('Por favor, forneça um termo de pesquisa (ID de usuário ou número de telefone).');
@@ -47,8 +48,11 @@ const searchUsers = asyncHandler(async (req, res) => {
     // Verifica se a query parece um ID de 5 dígitos
     if (/^\d{5}$/.test(query)) {
         user = await User.findOne({ userId: query }).select('-pin');
-    } else { // Caso contrário, assume que é um número de telefone
+    } else if (/^\d{9}$/.test(query)) { // ATUALIZADO: Verifica 9 dígitos para número de telefone
         user = await User.findOne({ phone: query }).select('-pin');
+    } else {
+        res.status(400);
+        throw new Error('Formato de pesquisa inválido. Use um ID de 5 dígitos ou um número de telefone de 9 dígitos.');
     }
 
     if (!user) {
@@ -198,7 +202,7 @@ const resetUserPin = asyncHandler(async (req, res) => {
         throw new Error('Usuário não encontrado para redefinir o PIN.');
     }
 
-    if (!newPin || newPin.length < 4 || newPin.length > 6 || !/^\d+$/.test(newPin)) { // Validação completa
+    if (!newPin || newPin.length < 4 || newPin.length > 6 || !/^\d+$/.test(newPin)) {
         res.status(400);
         throw new Error('O novo PIN deve conter apenas números, entre 4 e 6 dígitos.');
     }
@@ -210,6 +214,66 @@ const resetUserPin = asyncHandler(async (req, res) => {
     res.json({ message: `PIN do usuário ${user.userId} redefinido com sucesso. Novo PIN: ${newPin}` });
 });
 
+// @desc    NOVO: Atualizar o número de telefone de um usuário
+// @route   PUT /api/admin/users/:id/phone
+// @access  Admin
+const updateUserPhoneNumber = asyncHandler(async (req, res) => {
+    const { newPhone } = req.body;
+    const userId = req.params.id;
+
+    if (!newPhone) {
+        res.status(400);
+        throw new Error('Por favor, forneça o novo número de telefone.');
+    }
+    // NOVO: Validação do formato do telefone (9 dígitos)
+    if (!/^\d{9}$/.test(newPhone)) {
+        res.status(400);
+        throw new Error('O novo número de telefone é inválido. Por favor, insira 9 dígitos numéricos.');
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+        res.status(404);
+        throw new Error('Usuário não encontrado.');
+    }
+
+    // Verificar se o novo número já existe para outro usuário
+    const phoneExistsForAnotherUser = await User.findOne({ phone: newPhone, _id: { $ne: userId } });
+    if (phoneExistsForAnotherUser) {
+        res.status(400);
+        throw new Error('Este número de telefone já está em uso por outro usuário.');
+    }
+
+    user.phone = newPhone; // Atualiza com o número de 9 dígitos
+    await user.save();
+
+    res.json({ message: `Número de telefone do usuário ${user.userId} atualizado para ${newPhone} com sucesso.`, user });
+});
+
+// @desc    NOVO: Apagar a conta de um usuário
+// @route   DELETE /api/admin/users/:id
+// @access  Admin
+const deleteUser = asyncHandler(async (req, res) => {
+    const userId = req.params.id;
+
+    const user = await User.findById(userId);
+    if (!user) {
+        res.status(404);
+        throw new Error('Usuário não encontrado para exclusão.');
+    }
+
+    // Remover todos os documentos associados ao usuário
+    await Transaction.deleteMany({ user: userId });
+    await PlanInstance.deleteMany({ user: userId });
+    // TODO: Considerar o que fazer com referências inversas (usuários que ele convidou)
+    // Por enquanto, o campo 'invitedBy' desses usuários permanecerá com um ObjectId que não existe mais.
+    // Isso é aceitável, mas pode-se decidir nullificar esses campos se necessário.
+
+    await user.deleteOne(); // Finalmente, remove o usuário
+
+    res.json({ message: 'Conta de usuário, planos e transações associadas deletados com sucesso.' });
+});
+
 
 // --- GERENCIAMENTO DE TRANSAÇÕES ---
 
@@ -217,6 +281,7 @@ const resetUserPin = asyncHandler(async (req, res) => {
 // @route   GET /api/admin/deposits
 // @access  Admin
 const getPendingDeposits = asyncHandler(async (req, res) => {
+    // ATUALIZADO: A populção de 'user' agora busca o telefone como 9 dígitos
     const deposits = await Transaction.find({ type: 'deposit', status: 'pending' }).populate('user', 'userId name phone');
     res.json(deposits);
 });
@@ -265,6 +330,7 @@ const rejectDeposit = asyncHandler(async (req, res) => {
 // @route   GET /api/admin/withdrawals
 // @access  Admin
 const getPendingWithdrawals = asyncHandler(async (req, res) => {
+    // ATUALIZADO: A populção de 'user' agora busca o telefone como 9 dígitos
     const withdrawals = await Transaction.find({ type: 'withdrawal', status: 'pending' })
                                          .populate('user', 'userId name phone walletBalance hasActivatedPlan'); 
     res.json(withdrawals);
@@ -472,7 +538,7 @@ const updateSettings = asyncHandler(async (req, res) => {
         const num = Number(value);
         if (isNaN(num) || num < 0) {
             res.status(400);
-            throw new Error(`O campo '${fieldName}' deve ser um número válido e não negativo.`);
+            throw new new Error(`O campo '${fieldName}' deve ser um número válido e não negativo.`);
         }
         return num;
     };
@@ -531,11 +597,13 @@ const updateSettings = asyncHandler(async (req, res) => {
 module.exports = {
     loginAdmin,
     getAllUsers,
-    searchUsers, // ATUALIZADO: Exporta a nova função de pesquisa
+    searchUsers,
     getUserDetailsForAdmin,
     toggleUserBlock,
     updateUserBalance,
     resetUserPin,
+    updateUserPhoneNumber, // NOVO: Exporta a função
+    deleteUser, // NOVO: Exporta a função
     getPendingDeposits,
     approveDeposit,
     rejectDeposit,

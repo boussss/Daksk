@@ -8,11 +8,17 @@ const { generateToken, generateUniqueUserId, generateInviteLink } = require('./u
 // @route   POST /api/users/register
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
-  const { name, username, phone, pin, invitedById } = req.body;
+  const { name, username, phone, pin, invitedById } = req.body; // 'phone' agora será os 9 dígitos
 
   if (!name || !username || !phone || !pin) {
     res.status(400);
     throw new Error('Por favor, preencha todos os campos obrigatórios.');
+  }
+
+  // NOVO: Validação do formato do telefone (9 dígitos) no backend
+  if (!/^\d{9}$/.test(phone)) {
+    res.status(400);
+    throw new Error('Número de telefone inválido. Por favor, insira 9 dígitos numéricos.');
   }
 
   const usernameExists = await User.findOne({ username });
@@ -20,6 +26,7 @@ const registerUser = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('Este nome de usuário já está em uso. Por favor, escolha outro.');
   }
+  // ATUALIZADO: Buscar por número de telefone sem +258
   const phoneExists = await User.findOne({ phone });
   if (phoneExists) {
     res.status(400);
@@ -44,9 +51,9 @@ const registerUser = asyncHandler(async (req, res) => {
 
   let invitedByUser = null;
   if (invitedById) {
+      // ATUALIZADO: Buscar invitedById pelo userId de 5 dígitos, não pelo telefone
       invitedByUser = await User.findOne({ userId: invitedById });
       if (!invitedByUser) {
-          // Se o ID do convidante não for encontrado, não impede o registro, apenas ignora o convite.
           console.warn(`ID de convite ${invitedById} não encontrado. Registro continuará sem convidante.`);
       }
   }
@@ -54,11 +61,11 @@ const registerUser = asyncHandler(async (req, res) => {
   const user = await User.create({
     name,
     username,
-    phone,
+    phone, // Salva o telefone como 9 dígitos
     pin: hashedPin, // Salva o PIN hashado
     userId: newUserId,
     invitedBy: invitedByUser ? invitedByUser._id : null,
-    hasActivatedPlan: false, // NOVO: Inicialmente sem plano ativado
+    hasActivatedPlan: false,
   });
   
   const settings = await Settings.findOne({ configKey: "main_settings" });
@@ -91,15 +98,21 @@ const registerUser = asyncHandler(async (req, res) => {
 // @route   POST /api/users/login
 // @access  Public
 const loginUser = asyncHandler(async (req, res) => {
-  const { phone, pin } = req.body;
+  const { phone, pin } = req.body; // 'phone' agora será os 9 dígitos
   if (!phone || !pin) {
     res.status(400);
     throw new Error('Por favor, forneça o número de telefone e o PIN.');
   }
 
+  // NOVO: Validação do formato do telefone (9 dígitos) no backend para login
+  if (!/^\d{9}$/.test(phone)) {
+    res.status(400);
+    throw new Error('Número de telefone inválido. Por favor, insira 9 dígitos numéricos.');
+  }
+
+  // ATUALIZADO: Buscar por número de telefone sem +258
   const user = await User.findOne({ phone });
 
-  // Compara o PIN fornecido com o PIN hashado no banco de dados (NOVA IMPLEMENTAÇÃO)
   if (user && (await bcrypt.compare(pin, user.pin))) {
     if (user.isBlocked) {
       res.status(403);
@@ -165,7 +178,7 @@ const getDashboardData = asyncHandler(async (req, res) => {
         return result.length > 0 ? result[0].total : 0;
     };
 
-    const profitTypes = ['collection', 'commission', 'lottery_win']; // ATUALIZADO: Inclui lottery_win
+    const profitTypes = ['collection', 'commission', 'lottery_win'];
 
     const [todayProfit, yesterdayProfit, monthProfit, totalReferralProfit] = await Promise.all([
         getProfitSum(todayStart, new Date(todayStart.getTime() + 24 * 60 * 60 * 1000), profitTypes),
@@ -233,7 +246,7 @@ const createDepositRequest = asyncHandler(async (req, res) => {
             proofType: 'image',
             proofImageUrl: req.file.path 
         };
-    } else if (proofText) { // Garante que proofText é usado apenas se req.file não estiver presente
+    } else if (proofText) {
         transactionDetails = { 
             proofType: 'text',
             proofText: proofText 
@@ -265,17 +278,23 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
         throw new Error("Configurações do sistema não encontradas. Por favor, tente novamente mais tarde.");
     }
 
-    const { amount, paymentNumber, holderName, network } = req.body; // ATUALIZADO: Inclui holderName e network
-    const user = req.user; // req.user já vem do middleware protectUser
+    // ATUALIZADO: 'paymentNumber' agora deve ser o número de 9 dígitos.
+    const { amount, paymentNumber, holderName, network } = req.body; 
+    const user = req.user;
     const withdrawalAmount = Number(amount);
     
     if (isNaN(withdrawalAmount) || withdrawalAmount <= 0) { 
         res.status(400); 
         throw new Error("O valor do saque deve ser um número válido e maior que zero."); 
     }
-    if (!paymentNumber || !holderName || !network) { // ATUALIZADO: Validar holderName e network
+    if (!paymentNumber || !holderName || !network) {
         res.status(400); 
         throw new Error("Nome do titular, número para pagamento e rede são obrigatórios."); 
+    }
+    // NOVO: Validação do formato do número de pagamento (9 dígitos)
+    if (!/^\d{9}$/.test(paymentNumber)) {
+        res.status(400);
+        throw new Error('Número de pagamento inválido. Por favor, insira 9 dígitos numéricos.');
     }
     
     if (withdrawalAmount < settings.withdrawalMin || withdrawalAmount > settings.withdrawalMax) {
@@ -283,7 +302,6 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
         throw new Error(`O valor do saque deve estar entre ${settings.withdrawalMin} MT e ${settings.withdrawalMax} MT.`);
     }
 
-    // NOVA CONDIÇÃO: Usuário só pode sacar se tiver um plano ativo ou já tiver ativado um plano
     if (!user.activePlanInstance && !user.hasActivatedPlan) {
         res.status(403);
         throw new Error("Você precisa ter um plano ativo ou já ter ativado um plano anteriormente para poder sacar.");
@@ -295,25 +313,23 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
     }
     
     const fee = (withdrawalAmount * settings.withdrawalFee) / 100;
-    const totalDeducted = withdrawalAmount + fee; // Valor total a ser deduzido do saldo do usuário
+    const totalDeducted = withdrawalAmount + fee;
     
     if (totalDeducted > user.walletBalance) { 
         res.status(400); 
         throw new Error(`Saldo insuficiente na carteira. Você precisa de ${totalDeducted.toFixed(2)} MT para sacar ${withdrawalAmount.toFixed(2)} MT (incluindo taxa de ${fee.toFixed(2)} MT).`); 
     }
 
-    // Dedução do saldo do usuário é feita APENAS após a aprovação do admin.
-    // Aqui, apenas registramos a transação pendente.
     const withdrawalTransaction = await Transaction.create({
         user: user._id, 
         type: 'withdrawal', 
-        amount: -withdrawalAmount, // Registra o valor negativo como a quantia solicitada
+        amount: -withdrawalAmount,
         status: 'pending',
         description: `Requisição de saque de ${withdrawalAmount.toFixed(2)} MT para ${network}`,
         transactionDetails: { 
-            destinationNumber: paymentNumber,
-            holderName: holderName, // ATUALIZADO: Adiciona holderName
-            network: network, // ATUALIZADO: Adiciona network
+            destinationNumber: paymentNumber, // Salva o número de 9 dígitos
+            holderName: holderName,
+            network: network,
             fee: fee,
             totalDeducted: totalDeducted 
         }
@@ -329,6 +345,12 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
 // @route   GET /api/users/referrals
 // @access  Private
 const getReferralData = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id).select('userId');
+    if (!user) {
+        res.status(404);
+        throw new Error('Usuário não encontrado.');
+    }
+
     const referrals = await User.find({ invitedBy: req.user._id })
         .select('userId username createdAt activePlanInstance')
         .populate({
@@ -346,7 +368,6 @@ const getReferralData = asyncHandler(async (req, res) => {
                 user: req.user._id,
                 type: 'commission',
                 status: 'approved',
-                // ATUALIZADO: Busca mais precisa para comissões
                 description: { $regex: new RegExp(`do usuário ${referralUserId}`) } 
             }},
             { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -365,7 +386,8 @@ const getReferralData = asyncHandler(async (req, res) => {
         };
     }));
 
-    const fullInviteLink = generateInviteLink(req.user.userId);
+    // ATUALIZADO: Gerar link de convite usando o userId de 5 dígitos
+    const fullInviteLink = generateInviteLink(user.userId);
 
     res.json({
         inviteLink: fullInviteLink,
@@ -416,8 +438,8 @@ const getWalletSummary = asyncHandler(async (req, res) => {
     }, {});
     
     const totalDeposited = summaryData.deposit || 0;
-    const totalWithdrawn = Math.abs(summaryData.withdrawal || 0); // Sempre positivo para o resumo
-    const totalProfit = (summaryData.collection || 0) + (summaryData.commission || 0) + (summaryData.welcome_bonus || 0) + (summaryData.lottery_win || 0); // ATUALIZADO: Inclui lottery_win
+    const totalWithdrawn = Math.abs(summaryData.withdrawal || 0);
+    const totalProfit = (summaryData.collection || 0) + (summaryData.commission || 0) + (summaryData.welcome_bonus || 0) + (summaryData.lottery_win || 0);
 
     res.status(200).json({
         totalDeposited,
@@ -439,7 +461,7 @@ const getUserTransactions = asyncHandler(async (req, res) => {
 // @access  Private
 const redeemLotteryCode = asyncHandler(async (req, res) => {
     const { code } = req.body;
-    const user = req.user; // Usuário logado
+    const user = req.user;
     
     if (!code) {
         res.status(400);
@@ -468,14 +490,12 @@ const redeemLotteryCode = asyncHandler(async (req, res) => {
         throw new Error('Você já resgatou este código de sorteio anteriormente.');
     }
 
-    // NOVO: Verificação se o usuário tem um plano ativo
     const userWithActivePlan = await User.findById(user._id).populate('activePlanInstance');
     if (!userWithActivePlan || !userWithActivePlan.activePlanInstance) {
         res.status(403);
         throw new Error('Você precisa ter um plano de investimento ativo para resgatar códigos de sorteio.');
     }
 
-    // Gerar valor aleatório entre min e max definidos pelo admin
     const prizeAmount = Math.floor(Math.random() * (lotteryCode.valueMax - lotteryCode.valueMin + 1)) + lotteryCode.valueMin;
 
     user.walletBalance += prizeAmount;
@@ -516,5 +536,5 @@ module.exports = {
   getWalletSummary,
   getHistoryData,
   getUserTransactions,
-  redeemLotteryCode, // NOVO: Exportar a função
+  redeemLotteryCode,
 };
