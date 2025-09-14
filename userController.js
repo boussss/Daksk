@@ -111,7 +111,9 @@ const registerUser = asyncHandler(async (req, res) => {
   
   let phoneExists;
   try {
-      phoneExists = await User.findOne({ phone: { $in: generatePhoneQueryArray(rawPhone) } }); // Chama a função, que pode lançar erro
+      // Usar o número já limpo e validado 'phone' ou 'rawPhone' que vem do input?
+      // Usar 'phone' é mais consistente, pois já passou pela validação rigorosa.
+      phoneExists = await User.findOne({ phone: { $in: generatePhoneQueryArray(phone) } }); 
   } catch (error) {
       res.status(400);
       throw new Error(`Erro na validação do telefone: ${error.message}`); // Garante que error.message é uma string
@@ -192,15 +194,17 @@ const loginUser = asyncHandler(async (req, res) => {
   }
 
   let user;
+  let phoneQueryArray;
   try {
-      const phoneQueryArray = generatePhoneQueryArray(rawPhone); // Chama a função, que pode lançar erro
+      phoneQueryArray = generatePhoneQueryArray(rawPhone); // Chama a função, que pode lançar erro
       user = await User.findOne({ phone: { $in: phoneQueryArray } });
   } catch (error) {
-      res.status(400);
-      throw new Error(`Número de telefone inválido para login: ${error.message}`); // Garante que error.message é uma string
+      res.status(400); // Se generatePhoneQueryArray lançar erro, é um input inválido
+      throw new Error(`Número de telefone inválido para login: ${error.message}`);
   }
 
-  if (user && (await bcrypt.compare(pin, user.pin))) {
+  // NOVO: Garantir que user.pin é uma string para bcrypt.compare
+  if (user && user.pin && (await bcrypt.compare(pin, user.pin))) { 
     if (user.isBlocked) {
       res.status(403);
       throw new Error('Esta conta está bloqueada. Por favor, contacte o suporte.');
@@ -212,6 +216,7 @@ const loginUser = asyncHandler(async (req, res) => {
     });
   } else {
     res.status(401);
+    // Mensagem genérica para segurança, sem revelar se o telefone existe ou se o PIN está errado
     throw new Error('Telefone ou PIN inválido. Por favor, verifique suas credenciais.');
   }
 });
