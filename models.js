@@ -10,10 +10,11 @@ const UserSchema = new mongoose.Schema({
     required: true,
     unique: true,
     trim: true,
-    // REMOVIDO: Validador estrito de 9 dígitos.
     // A validação e normalização flexível será feita nos controladores.
   },
   userId: { type: String, required: true, unique: true, minlength: 5, maxlength: 5 },
+  // ADICIONE ESTA LINHA:
+  pin: { type: String, required: true }, // O PIN hasheado será armazenado aqui
   profilePicture: { type: String, default: '' },
   walletBalance: { type: Number, default: 0 },
   bonusBalance: { type: Number, default: 0 },
@@ -103,7 +104,6 @@ const SettingsSchema = new mongoose.Schema({
         holderName: String,
         number: {
           type: String,
-          // REMOVIDO: Validador estrito de 9 dígitos.
           // A validação e normalização flexível será feita nos controladores.
           required: true // Mantém como obrigatório
         },
