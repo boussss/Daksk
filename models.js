@@ -123,7 +123,7 @@ const PlanInstance = mongoose.model('PlanInstance', PlanInstanceSchema);
 const Transaction = mongoose.model('Transaction', TransactionSchema);
 const Admin = mongoose.model('Admin', AdminSchema);
 const Banner = mongoose.model('Banner', BannerSchema);
-const LotteryCode = mongoose.model('LotteryCode', LotteryCodeSchema); // NOVO: Exportando o modelo
+const LotteryCode = mongoose.model('LotteryCode', LotteryCodeSchema);
 const Settings = mongoose.model('Settings', SettingsSchema);
 
 module.exports = { User, Plan, PlanInstance, Transaction, Admin, Banner, LotteryCode, Settings };
