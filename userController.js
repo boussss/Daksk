@@ -468,6 +468,13 @@ const redeemLotteryCode = asyncHandler(async (req, res) => {
         throw new Error('Você já resgatou este código de sorteio anteriormente.');
     }
 
+    // NOVO: Verificação se o usuário tem um plano ativo
+    const userWithActivePlan = await User.findById(user._id).populate('activePlanInstance');
+    if (!userWithActivePlan || !userWithActivePlan.activePlanInstance) {
+        res.status(403);
+        throw new Error('Você precisa ter um plano de investimento ativo para resgatar códigos de sorteio.');
+    }
+
     // Gerar valor aleatório entre min e max definidos pelo admin
     const prizeAmount = Math.floor(Math.random() * (lotteryCode.valueMax - lotteryCode.valueMin + 1)) + lotteryCode.valueMin;
 
