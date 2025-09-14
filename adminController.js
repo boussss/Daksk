@@ -3,6 +3,8 @@ const asyncHandler = require('express-async-handler');
 const bcrypt = require('bcryptjs');
 const { Admin, User, Transaction, PlanInstance, Banner, Settings, LotteryCode } = require('./models');
 const { generateToken, generateLotteryCode } = require('./utils');
+// NOVO: Importar as funções de normalização do userController
+const { standardizePhoneNumber, generatePhoneQueryArray } = require('./userController');
 
 // @desc    Autenticar (login) o administrador
 // @route   POST /api/admin/login
@@ -108,7 +110,7 @@ const getUserDetailsForAdmin = asyncHandler(async (req, res) => {
         }},
         { $group: { _id: null, totalAmount: { $sum: '$amount' } } }
     ]);
-    const totalOwnReferralEarnings = totalEarningsFromOwnReferrals.length > 0 ? totalEarningsFromOwnReferralEarnings[0].totalAmount : 0;
+    const totalOwnReferralEarnings = totalEarningsFromOwnReferrals.length > 0 ? totalEarningsFromOwnReferrals[0].totalAmount : 0;
 
 
     const formattedReferrals = await Promise.all(referrals.map(async (ref) => {
@@ -229,7 +231,7 @@ const updateUserPhoneNumber = asyncHandler(async (req, res) => {
     }
     
     try {
-        const newPhone = standardizePhoneNumber(rawNewPhone); // NORMALIZAÇÃO AQUI
+        const newPhone = standardizePhoneNumber(rawNewPhone); // PADRONIZAÇÃO AQUI
     
         const user = await User.findById(userId);
         if (!user) {
@@ -581,7 +583,7 @@ const updateSettings = asyncHandler(async (req, res) => {
                 return {
                     name: method.name,
                     holderName: method.holderName,
-                    number: standardizePhoneNumber(method.number), // NORMALIZAÇÃO AQUI
+                    number: standardizePhoneNumber(method.number), // PADRONIZAÇÃO AQUI
                     isActive: method.isActive
                 };
             } catch (error) {

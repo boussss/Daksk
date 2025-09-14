@@ -79,6 +79,7 @@ adminRouter.put('/users/:id/balance', protectAdmin, adminController.updateUserBa
 adminRouter.put('/users/:id/reset-pin', protectAdmin, adminController.resetUserPin);
 adminRouter.put('/users/:id/phone', protectAdmin, adminController.updateUserPhoneNumber); // NOVO: Rota para editar telefone
 adminRouter.delete('/users/:id', protectAdmin, adminController.deleteUser); // NOVO: Rota para apagar usuário
+adminRouter.get('/users/active-plans-count', protectAdmin, adminController.getActivePlanUsersCount); // NOVO: Rota para contar usuários com planos ativos
 
 // --- Gerenciamento de Planos ---
 adminRouter.get('/plans', protectAdmin, plansController.getAllPlansForAdmin);
