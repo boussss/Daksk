@@ -33,19 +33,27 @@ const getAllUsers = asyncHandler(async (req, res) => {
     res.json(users);
 });
 
-// @desc    Pesquisar usuário por ID de 5 dígitos
+// @desc    Pesquisar usuário por ID de 5 dígitos ou número de telefone (ATUALIZADO)
 // @route   GET /api/admin/users/search
 // @access  Admin
-const searchUserById = asyncHandler(async (req, res) => {
-    const { userId } = req.query;
-    if (!userId) {
+const searchUsers = asyncHandler(async (req, res) => {
+    const { query } = req.query; // Usa um único parâmetro 'query'
+    if (!query) {
         res.status(400);
-        throw new Error('Por favor, forneça o ID do usuário para a pesquisa.');
+        throw new Error('Por favor, forneça um termo de pesquisa (ID de usuário ou número de telefone).');
     }
-    const user = await User.findOne({ userId }).select('-pin');
+
+    let user;
+    // Verifica se a query parece um ID de 5 dígitos
+    if (/^\d{5}$/.test(query)) {
+        user = await User.findOne({ userId: query }).select('-pin');
+    } else { // Caso contrário, assume que é um número de telefone
+        user = await User.findOne({ phone: query }).select('-pin');
+    }
+
     if (!user) {
         res.status(404);
-        throw new Error('Usuário não encontrado com o ID fornecido.');
+        throw new Error('Usuário não encontrado com o termo de pesquisa fornecido.');
     }
     res.json(user);
 });
@@ -75,22 +83,20 @@ const getUserDetailsForAdmin = asyncHandler(async (req, res) => {
             populate: { path: 'plan', model: 'Plan', select: 'name' }
         });
 
-    // Calcular o rendimento total de comissões gerado por este usuário para o seu padrinho
     const totalReferralEarningsFromUser = await Transaction.aggregate([
         { $match: { 
             type: 'commission', 
             status: 'approved',
-            description: { $regex: new RegExp(`do usuário ${user.userId}`) } // Busca comissão gerada ESPECIFICAMENTE por este usuário
+            description: { $regex: new RegExp(`do usuário ${user.userId}`) }
         }},
         { $group: { _id: null, totalAmount: { $sum: '$amount' } } }
     ]);
     const totalEarningsForReferrer = totalReferralEarningsFromUser.length > 0 ? totalReferralEarningsFromUser[0].totalAmount : 0;
 
 
-    // Calcular o total que este usuário ganhou dos seus próprios convidados
     const totalEarningsFromOwnReferrals = await Transaction.aggregate([
         { $match: { 
-            user: user._id, // Transações deste usuário
+            user: user._id,
             type: 'commission', 
             status: 'approved',
         }},
@@ -99,14 +105,13 @@ const getUserDetailsForAdmin = asyncHandler(async (req, res) => {
     const totalOwnReferralEarnings = totalEarningsFromOwnReferrals.length > 0 ? totalEarningsFromOwnReferrals[0].totalAmount : 0;
 
 
-    // Formatar os convidados para incluir o rendimento que eles deram ao usuário
     const formattedReferrals = await Promise.all(referrals.map(async (ref) => {
         const earningsFromThisReferral = await Transaction.aggregate([
             { $match: { 
-                user: user._id, // O usuário sendo inspecionado
+                user: user._id,
                 type: 'commission', 
                 status: 'approved',
-                description: { $regex: new RegExp(`do usuário ${ref.userId}`) } // Comissão vinda deste convidado específico
+                description: { $regex: new RegExp(`do usuário ${ref.userId}`) }
             }},
             { $group: { _id: null, total: { $sum: '$amount' } } }
         ]);
@@ -128,7 +133,6 @@ const getUserDetailsForAdmin = asyncHandler(async (req, res) => {
             list: formattedReferrals,
             totalOwnReferralEarnings: totalOwnReferralEarnings,
         },
-        // O rendimento que este usuário gerou para o seu próprio padrinho
         totalEarningsForReferrer: totalEarningsForReferrer, 
     });
 });
@@ -194,13 +198,13 @@ const resetUserPin = asyncHandler(async (req, res) => {
         throw new Error('Usuário não encontrado para redefinir o PIN.');
     }
 
-    if (!newPin || newPin.length < 4 || newPin.length > 6) {
+    if (!newPin || newPin.length < 4 || newPin.length > 6 || !/^\d+$/.test(newPin)) { // Validação completa
         res.status(400);
-        throw new Error('O novo PIN deve ter entre 4 e 6 dígitos.');
+        throw new Error('O novo PIN deve conter apenas números, entre 4 e 6 dígitos.');
     }
 
     const salt = await bcrypt.genSalt(10);
-    user.pin = await bcrypt.hash(newPin, salt); // Hash do novo PIN
+    user.pin = await bcrypt.hash(newPin, salt);
     await user.save();
 
     res.json({ message: `PIN do usuário ${user.userId} redefinido com sucesso. Novo PIN: ${newPin}` });
@@ -262,7 +266,7 @@ const rejectDeposit = asyncHandler(async (req, res) => {
 // @access  Admin
 const getPendingWithdrawals = asyncHandler(async (req, res) => {
     const withdrawals = await Transaction.find({ type: 'withdrawal', status: 'pending' })
-                                         .populate('user', 'userId name phone walletBalance hasActivatedPlan');
+                                         .populate('user', 'userId name phone walletBalance hasActivatedPlan'); 
     res.json(withdrawals);
 });
 
@@ -527,11 +531,11 @@ const updateSettings = asyncHandler(async (req, res) => {
 module.exports = {
     loginAdmin,
     getAllUsers,
-    searchUserById,
+    searchUsers, // ATUALIZADO: Exporta a nova função de pesquisa
     getUserDetailsForAdmin,
     toggleUserBlock,
     updateUserBalance,
-    resetUserPin, // NOVO: Exportar a função de redefinir PIN
+    resetUserPin,
     getPendingDeposits,
     approveDeposit,
     rejectDeposit,

@@ -41,7 +41,7 @@ userRouter.post('/withdraw', protectUser, userController.createWithdrawalRequest
 // --- Convites e Bônus (Rotas Protegidas) ---
 userRouter.get('/referrals', protectUser, userController.getReferralData);
 
-// --- Sorteio (NOVO) ---
+// --- Sorteio ---
 userRouter.post('/lottery/redeem', protectUser, userController.redeemLotteryCode);
 
 
@@ -72,11 +72,11 @@ adminRouter.post('/login', adminController.loginAdmin);
 
 // --- Gerenciamento de Usuários ---
 adminRouter.get('/users', protectAdmin, adminController.getAllUsers);
-adminRouter.get('/users/search', protectAdmin, adminController.searchUserById);
+adminRouter.get('/users/search', protectAdmin, adminController.searchUsers); // ATUALIZADO: Usar a nova função searchUsers
 adminRouter.get('/users/:id/details', protectAdmin, adminController.getUserDetailsForAdmin);
 adminRouter.put('/users/:id/block', protectAdmin, adminController.toggleUserBlock);
 adminRouter.put('/users/:id/balance', protectAdmin, adminController.updateUserBalance);
-adminRouter.put('/users/:id/reset-pin', protectAdmin, adminController.resetUserPin); // NOVO: Rota para redefinir PIN
+adminRouter.put('/users/:id/reset-pin', protectAdmin, adminController.resetUserPin);
 
 // --- Gerenciamento de Planos ---
 adminRouter.get('/plans', protectAdmin, plansController.getAllPlansForAdmin);
