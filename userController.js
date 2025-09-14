@@ -5,58 +5,77 @@ const { User, Transaction, Plan, PlanInstance, Banner, Settings, LotteryCode } =
 const { generateToken, generateUniqueUserId, generateInviteLink } = require('./utils');
 
 /**
- * Função auxiliar para padronizar números de telefone para o formato "+258XXXXXXXXX".
- * Remove caracteres não-dígitos e garante o prefixo "+258" seguido de 9 dígitos.
- * Usada para SALVAR e para QUERIES que precisam do formato padronizado.
- * @param {string} rawPhone - O número de telefone como recebido do frontend ou de um input.
- * @returns {string} O número de telefone padronizado (ex: "+258841234567").
- * @throws {Error} Se o número normalizado não tiver 9 dígitos após o prefixo.
+ * Função auxiliar para limpar e validar números de telefone para armazenamento no DB.
+ * Remove caracteres não-dígitos (exceto o '+' se for o primeiro).
+ * Retorna o número validado no formato que deve ser salvo (ex: "841234567" ou "+258841234567"),
+ * respeitando a presença/ausência do prefixo na entrada original, mas garantindo 9 dígitos após o prefixo.
+ * @param {string} rawPhone - O número de telefone como recebido (pode ter "+", "258", espaços).
+ * @returns {string} O número de telefone limpo e validado para armazenamento.
+ * @throws {Error} Se o número não for um formato válido de telefone de Moçambique.
  */
-const standardizePhoneNumber = (rawPhone) => {
-    let cleanedPhone = String(rawPhone).replace(/\D/g, ''); // Remove tudo que não for dígito
+const cleanAndValidatePhoneForDB = (rawPhone) => {
+    if (!rawPhone) {
+        throw new Error("Número de telefone não pode ser vazio.");
+    }
 
-    // Se começar com '258' e for longo o suficiente, remover o '258' temporariamente
-    if (cleanedPhone.startsWith('258') && cleanedPhone.length >= 12) { // 258 + 9 dígitos = 12
-        cleanedPhone = cleanedPhone.substring(3);
-    }
+    let cleaned = String(rawPhone).replace(/\s/g, ''); // Remove apenas espaços iniciais
     
-    // Agora, verificamos se o que resta são 9 dígitos
-    if (cleanedPhone.length !== 9 || !/^\d{9}$/.test(cleanedPhone)) {
-        throw new Error('Número de telefone inválido. Deve conter exatamente 9 dígitos numéricos após o prefixo (+258).');
+    // Permitir '+' apenas no início
+    if (cleaned.startsWith('+')) {
+        let digitsOnly = cleaned.substring(1).replace(/\D/g, ''); // Remove não-dígitos após o '+'
+        if (!digitsOnly) { // Se não houver dígitos após o '+'
+            throw new Error("Número de telefone inválido. '+' deve ser seguido por dígitos.");
+        }
+        cleaned = `+${digitsOnly}`;
+    } else {
+        cleaned = cleaned.replace(/\D/g, ''); // Remove todos os não-dígitos
     }
-    return `+258${cleanedPhone}`; // Retorna sempre o formato padronizado
+
+    // Agora, a lógica de validação do formato de Moçambique
+    if (cleaned.startsWith('+258')) {
+        const nineDigits = cleaned.substring(4); // Pega os dígitos após "+258"
+        if (nineDigits.length !== 9 || !/^\d{9}$/.test(nineDigits)) {
+            throw new Error('Número de telefone inválido. Após "+258" devem haver exatamente 9 dígitos numéricos.');
+        }
+        return cleaned; // Salva com o prefixo
+    } else if (cleaned.length === 9) {
+        if (!/^\d{9}$/.test(cleaned)) {
+            throw new Error('Número de telefone inválido. Deve conter exatamente 9 dígitos numéricos.');
+        }
+        return cleaned; // Salva sem o prefixo
+    } else {
+        throw new Error('Número de telefone inválido. Use 9 dígitos (ex: 84XXXXXXX) ou o formato "+258XXXXXXXXX".');
+    }
 };
 
 /**
  * Função auxiliar para gerar um array de possíveis formatos de um número de telefone
  * para usar em consultas (login, verificar existência), acomodando dados antigos e novos.
- * @param {string} rawPhone - O número de telefone como recebido.
+ * Esta função é para ser flexível na busca.
+ * @param {string} rawPhone - O número de telefone como recebido (pode ter "+", "258", espaços).
  * @returns {string[]} Um array de strings com formatos de telefone para buscar no DB.
+ * @throws {Error} Se o número não puder ser limpo para um formato base de 9 dígitos.
  */
 const generatePhoneQueryArray = (rawPhone) => {
-    let cleanedPhone = String(rawPhone).replace(/\D/g, ''); // Remove tudo que não for dígito
+    let cleanedBasePhone = String(rawPhone).replace(/\D/g, ''); // Remove tudo que não for dígito
     let queryPossibilities = [];
 
-    // Tenta obter o formato de 9 dígitos puros
-    let nineDigits = cleanedPhone;
-    if (cleanedPhone.startsWith('258') && cleanedPhone.length >= 12) { // Ex: "+258841234567" ou "258841234567"
-        nineDigits = cleanedPhone.substring(3);
+    // Tenta extrair a base de 9 dígitos a partir de várias entradas
+    let nineDigitsOnly = '';
+    if (cleanedBasePhone.startsWith('258') && cleanedBasePhone.length >= 12) { // "258" + 9 dígitos
+        nineDigitsOnly = cleanedBasePhone.substring(3);
+    } else if (cleanedBasePhone.length === 9) { // Apenas 9 dígitos
+        nineDigitsOnly = cleanedBasePhone;
     }
 
-    if (nineDigits.length === 9 && /^\d{9}$/.test(nineDigits)) {
-        // Possibilidade 1: Salvo como 9 dígitos (novo padrão 'normalizePhoneNumber' anterior)
-        queryPossibilities.push(nineDigits);
-        // Possibilidade 2: Salvo como "+258" + 9 dígitos (novo padrão 'standardizePhoneNumber' atual)
-        queryPossibilities.push(`+258${nineDigits}`);
-    } else if (cleanedPhone.length === 12 && cleanedPhone.startsWith('258') && /^\d{9}$/.test(cleanedPhone.substring(3))) {
-        // Se a entrada original já era "258" + 9 dígitos, também adiciona como possibilidade
-        queryPossibilities.push(`+${cleanedPhone}`); // Ex: "+258841234567"
-        queryPossibilities.push(cleanedPhone.substring(3)); // Ex: "841234567"
-    } else if (cleanedPhone.length === 13 && cleanedPhone.startsWith('+258') && /^\d{9}$/.test(cleanedPhone.substring(4))) {
-        // Se a entrada original já era "+258" + 9 dígitos, também adiciona como possibilidade
-        queryPossibilities.push(cleanedPhone); // Ex: "+258841234567"
-        queryPossibilities.push(cleanedPhone.substring(4)); // Ex: "841234567"
+    if (nineDigitsOnly.length !== 9 || !/^\d{9}$/.test(nineDigitsOnly)) {
+        // Se não conseguirmos uma base de 9 dígitos, o número é inválido para consulta
+        throw new Error('Número de telefone inválido para pesquisa. Deve conter pelo menos 9 dígitos numéricos.');
     }
+
+    // Adiciona as possibilidades baseadas nos 9 dígitos limpos
+    queryPossibilities.push(nineDigitsOnly); // Ex: "841234567"
+    queryPossibilities.push(`+258${nineDigitsOnly}`); // Ex: "+258841234567"
     
     // Remove duplicatas e retorna
     return [...new Set(queryPossibilities)];
@@ -74,7 +93,8 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('Por favor, preencha todos os campos obrigatórios.');
   }
 
-  const phone = standardizePhoneNumber(rawPhone); // PADRONIZAÇÃO AQUI para o formato "+258XXXXXXXXX"
+  // NOVO: Usar cleanAndValidatePhoneForDB para padronizar e validar o número para armazenamento
+  const phone = cleanAndValidatePhoneForDB(rawPhone);
 
   const usernameExists = await User.findOne({ username });
   if (usernameExists) {
@@ -115,7 +135,7 @@ const registerUser = asyncHandler(async (req, res) => {
   const user = await User.create({
     name,
     username,
-    phone, // Salva o telefone padronizado ("+258XXXXXXXXX")
+    phone, // Salva o telefone padronizado (com ou sem "+258" conforme a entrada do admin)
     pin: hashedPin,
     userId: newUserId,
     invitedBy: invitedByUser ? invitedByUser._id : null,
@@ -339,7 +359,7 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
         throw new Error("Nome do titular, número para pagamento e rede são obrigatórios."); 
     }
     
-    const paymentNumber = standardizePhoneNumber(rawPaymentNumber); // PADRONIZAÇÃO AQUI
+    const paymentNumber = cleanAndValidatePhoneForDB(rawPaymentNumber); // PADRONIZAÇÃO AQUI
 
     if (withdrawalAmount < settings.withdrawalMin || withdrawalAmount > settings.withdrawalMax) {
         res.status(400);
@@ -371,7 +391,7 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
         status: 'pending',
         description: `Requisição de saque de ${withdrawalAmount.toFixed(2)} MT para ${network}`,
         transactionDetails: { 
-            destinationNumber: paymentNumber, // Salva o número padronizado ("+258XXXXXXXXX")
+            destinationNumber: paymentNumber, // Salva o número padronizado
             holderName: holderName,
             network: network,
             fee: fee,
@@ -568,8 +588,8 @@ const redeemLotteryCode = asyncHandler(async (req, res) => {
 
 
 module.exports = {
-  standardizePhoneNumber, // Exportar para uso em outros controladores se necessário
-  generatePhoneQueryArray, // Exportar para uso em outros controladores se necessário
+  cleanAndValidatePhoneForDB, // Exportar para uso em outros controladores
+  generatePhoneQueryArray, // Exportar para uso em outros controladores
   registerUser,
   loginUser,
   getUserProfile,
