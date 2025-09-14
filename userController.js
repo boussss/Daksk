@@ -1,33 +1,89 @@
 // userController.js
 const asyncHandler = require('express-async-handler');
-const bcrypt = require('bcryptjs'); // Importar bcryptjs
-const { User, Transaction, Plan, PlanInstance, Banner, Settings, LotteryCode } = require('./models'); // Importar LotteryCode
+const bcrypt = require('bcryptjs');
+const { User, Transaction, Plan, PlanInstance, Banner, Settings, LotteryCode } = require('./models');
 const { generateToken, generateUniqueUserId, generateInviteLink } = require('./utils');
+
+/**
+ * Função auxiliar para padronizar números de telefone para o formato "+258XXXXXXXXX".
+ * Remove caracteres não-dígitos e garante o prefixo "+258" seguido de 9 dígitos.
+ * Usada para SALVAR e para QUERIES que precisam do formato padronizado.
+ * @param {string} rawPhone - O número de telefone como recebido do frontend ou de um input.
+ * @returns {string} O número de telefone padronizado (ex: "+258841234567").
+ * @throws {Error} Se o número normalizado não tiver 9 dígitos após o prefixo.
+ */
+const standardizePhoneNumber = (rawPhone) => {
+    let cleanedPhone = String(rawPhone).replace(/\D/g, ''); // Remove tudo que não for dígito
+
+    // Se começar com '258' e for longo o suficiente, remover o '258' temporariamente
+    if (cleanedPhone.startsWith('258') && cleanedPhone.length >= 12) { // 258 + 9 dígitos = 12
+        cleanedPhone = cleanedPhone.substring(3);
+    }
+    
+    // Agora, verificamos se o que resta são 9 dígitos
+    if (cleanedPhone.length !== 9 || !/^\d{9}$/.test(cleanedPhone)) {
+        throw new Error('Número de telefone inválido. Deve conter exatamente 9 dígitos numéricos após o prefixo (+258).');
+    }
+    return `+258${cleanedPhone}`; // Retorna sempre o formato padronizado
+};
+
+/**
+ * Função auxiliar para gerar um array de possíveis formatos de um número de telefone
+ * para usar em consultas (login, verificar existência), acomodando dados antigos e novos.
+ * @param {string} rawPhone - O número de telefone como recebido.
+ * @returns {string[]} Um array de strings com formatos de telefone para buscar no DB.
+ */
+const generatePhoneQueryArray = (rawPhone) => {
+    let cleanedPhone = String(rawPhone).replace(/\D/g, ''); // Remove tudo que não for dígito
+    let queryPossibilities = [];
+
+    // Tenta obter o formato de 9 dígitos puros
+    let nineDigits = cleanedPhone;
+    if (cleanedPhone.startsWith('258') && cleanedPhone.length >= 12) { // Ex: "+258841234567" ou "258841234567"
+        nineDigits = cleanedPhone.substring(3);
+    }
+
+    if (nineDigits.length === 9 && /^\d{9}$/.test(nineDigits)) {
+        // Possibilidade 1: Salvo como 9 dígitos (novo padrão 'normalizePhoneNumber' anterior)
+        queryPossibilities.push(nineDigits);
+        // Possibilidade 2: Salvo como "+258" + 9 dígitos (novo padrão 'standardizePhoneNumber' atual)
+        queryPossibilities.push(`+258${nineDigits}`);
+    } else if (cleanedPhone.length === 12 && cleanedPhone.startsWith('258') && /^\d{9}$/.test(cleanedPhone.substring(3))) {
+        // Se a entrada original já era "258" + 9 dígitos, também adiciona como possibilidade
+        queryPossibilities.push(`+${cleanedPhone}`); // Ex: "+258841234567"
+        queryPossibilities.push(cleanedPhone.substring(3)); // Ex: "841234567"
+    } else if (cleanedPhone.length === 13 && cleanedPhone.startsWith('+258') && /^\d{9}$/.test(cleanedPhone.substring(4))) {
+        // Se a entrada original já era "+258" + 9 dígitos, também adiciona como possibilidade
+        queryPossibilities.push(cleanedPhone); // Ex: "+258841234567"
+        queryPossibilities.push(cleanedPhone.substring(4)); // Ex: "841234567"
+    }
+    
+    // Remove duplicatas e retorna
+    return [...new Set(queryPossibilities)];
+};
+
 
 // @desc    Cadastrar um novo usuário
 // @route   POST /api/users/register
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
-  const { name, username, phone, pin, invitedById } = req.body; // 'phone' agora será os 9 dígitos
+  const { name, username, phone: rawPhone, pin, invitedById } = req.body;
 
-  if (!name || !username || !phone || !pin) {
+  if (!name || !username || !rawPhone || !pin) {
     res.status(400);
     throw new Error('Por favor, preencha todos os campos obrigatórios.');
   }
 
-  // NOVO: Validação do formato do telefone (9 dígitos) no backend
-  if (!/^\d{9}$/.test(phone)) {
-    res.status(400);
-    throw new Error('Número de telefone inválido. Por favor, insira 9 dígitos numéricos.');
-  }
+  const phone = standardizePhoneNumber(rawPhone); // PADRONIZAÇÃO AQUI para o formato "+258XXXXXXXXX"
 
   const usernameExists = await User.findOne({ username });
   if (usernameExists) {
     res.status(400);
     throw new Error('Este nome de usuário já está em uso. Por favor, escolha outro.');
   }
-  // ATUALIZADO: Buscar por número de telefone sem +258
-  const phoneExists = await User.findOne({ phone });
+  
+  // ATUALIZADO: Usar generatePhoneQueryArray para verificar a existência flexivelmente
+  const phoneExists = await User.findOne({ phone: { $in: generatePhoneQueryArray(rawPhone) } });
   if (phoneExists) {
     res.status(400);
     throw new Error('Este número de telefone já está em uso. Por favor, faça login ou use outro número.');
@@ -38,7 +94,6 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('O PIN deve ter entre 4 e 6 dígitos.');
   }
 
-  // Hash do PIN antes de salvar (NOVA IMPLEMENTAÇÃO)
   const salt = await bcrypt.genSalt(10);
   const hashedPin = await bcrypt.hash(pin, salt);
 
@@ -51,7 +106,6 @@ const registerUser = asyncHandler(async (req, res) => {
 
   let invitedByUser = null;
   if (invitedById) {
-      // ATUALIZADO: Buscar invitedById pelo userId de 5 dígitos, não pelo telefone
       invitedByUser = await User.findOne({ userId: invitedById });
       if (!invitedByUser) {
           console.warn(`ID de convite ${invitedById} não encontrado. Registro continuará sem convidante.`);
@@ -61,15 +115,15 @@ const registerUser = asyncHandler(async (req, res) => {
   const user = await User.create({
     name,
     username,
-    phone, // Salva o telefone como 9 dígitos
-    pin: hashedPin, // Salva o PIN hashado
+    phone, // Salva o telefone padronizado ("+258XXXXXXXXX")
+    pin: hashedPin,
     userId: newUserId,
     invitedBy: invitedByUser ? invitedByUser._id : null,
     hasActivatedPlan: false,
   });
   
   const settings = await Settings.findOne({ configKey: "main_settings" });
-  const welcomeBonusAmount = settings ? settings.welcomeBonus : 50; // Usa o valor do DB ou um fallback
+  const welcomeBonusAmount = settings ? settings.welcomeBonus : 50;
 
   user.bonusBalance += welcomeBonusAmount;
   await user.save();
@@ -98,20 +152,14 @@ const registerUser = asyncHandler(async (req, res) => {
 // @route   POST /api/users/login
 // @access  Public
 const loginUser = asyncHandler(async (req, res) => {
-  const { phone, pin } = req.body; // 'phone' agora será os 9 dígitos
-  if (!phone || !pin) {
+  const { phone: rawPhone, pin } = req.body;
+  if (!rawPhone || !pin) {
     res.status(400);
     throw new Error('Por favor, forneça o número de telefone e o PIN.');
   }
 
-  // NOVO: Validação do formato do telefone (9 dígitos) no backend para login
-  if (!/^\d{9}$/.test(phone)) {
-    res.status(400);
-    throw new Error('Número de telefone inválido. Por favor, insira 9 dígitos numéricos.');
-  }
-
-  // ATUALIZADO: Buscar por número de telefone sem +258
-  const user = await User.findOne({ phone });
+  // ATUALIZADO: Usar generatePhoneQueryArray para buscar flexivelmente
+  const user = await User.findOne({ phone: { $in: generatePhoneQueryArray(rawPhone) } });
 
   if (user && (await bcrypt.compare(pin, user.pin))) {
     if (user.isBlocked) {
@@ -278,8 +326,7 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
         throw new Error("Configurações do sistema não encontradas. Por favor, tente novamente mais tarde.");
     }
 
-    // ATUALIZADO: 'paymentNumber' agora deve ser o número de 9 dígitos.
-    const { amount, paymentNumber, holderName, network } = req.body; 
+    const { amount, paymentNumber: rawPaymentNumber, holderName, network } = req.body;
     const user = req.user;
     const withdrawalAmount = Number(amount);
     
@@ -287,16 +334,13 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
         res.status(400); 
         throw new Error("O valor do saque deve ser um número válido e maior que zero."); 
     }
-    if (!paymentNumber || !holderName || !network) {
+    if (!rawPaymentNumber || !holderName || !network) {
         res.status(400); 
         throw new Error("Nome do titular, número para pagamento e rede são obrigatórios."); 
     }
-    // NOVO: Validação do formato do número de pagamento (9 dígitos)
-    if (!/^\d{9}$/.test(paymentNumber)) {
-        res.status(400);
-        throw new Error('Número de pagamento inválido. Por favor, insira 9 dígitos numéricos.');
-    }
     
+    const paymentNumber = standardizePhoneNumber(rawPaymentNumber); // PADRONIZAÇÃO AQUI
+
     if (withdrawalAmount < settings.withdrawalMin || withdrawalAmount > settings.withdrawalMax) {
         res.status(400);
         throw new Error(`O valor do saque deve estar entre ${settings.withdrawalMin} MT e ${settings.withdrawalMax} MT.`);
@@ -327,7 +371,7 @@ const createWithdrawalRequest = asyncHandler(async (req, res) => {
         status: 'pending',
         description: `Requisição de saque de ${withdrawalAmount.toFixed(2)} MT para ${network}`,
         transactionDetails: { 
-            destinationNumber: paymentNumber, // Salva o número de 9 dígitos
+            destinationNumber: paymentNumber, // Salva o número padronizado ("+258XXXXXXXXX")
             holderName: holderName,
             network: network,
             fee: fee,
@@ -386,7 +430,6 @@ const getReferralData = asyncHandler(async (req, res) => {
         };
     }));
 
-    // ATUALIZADO: Gerar link de convite usando o userId de 5 dígitos
     const fullInviteLink = generateInviteLink(user.userId);
 
     res.json({
@@ -525,6 +568,8 @@ const redeemLotteryCode = asyncHandler(async (req, res) => {
 
 
 module.exports = {
+  standardizePhoneNumber, // Exportar para uso em outros controladores se necessário
+  generatePhoneQueryArray, // Exportar para uso em outros controladores se necessário
   registerUser,
   loginUser,
   getUserProfile,

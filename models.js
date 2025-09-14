@@ -10,13 +10,8 @@ const UserSchema = new mongoose.Schema({
     required: true,
     unique: true,
     trim: true,
-    // NOVO: Adicionado validador para garantir que o telefone tem 9 dígitos numéricos
-    validate: {
-      validator: function(v) {
-        return /^\d{9}$/.test(v);
-      },
-      message: props => `${props.value} não é um número de telefone válido (deve conter 9 dígitos numéricos)!`
-    }
+    // REMOVIDO: Validador estrito de 9 dígitos.
+    // A validação e normalização flexível será feita nos controladores.
   },
   userId: { type: String, required: true, unique: true, minlength: 5, maxlength: 5 },
   profilePicture: { type: String, default: '' },
@@ -67,7 +62,7 @@ const TransactionSchema = new mongoose.Schema({
   status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved' },
   description: String,
   transactionDetails: {
-    type: Object, // Mantido como Object para flexibilidade, a validação de destinationNumber será no controlador
+    type: Object,
   },
   createdAt: { type: Date, default: Date.now },
 });
@@ -86,7 +81,7 @@ const BannerSchema = new mongoose.Schema({
 });
 
 // --- NOVO ESQUEMA: CÓDIGO DE SORTEIO ---
-const LotteryCodeSchema = new mongoose.Schema({
+const LotteryCodeSchema = new mongoose.mongoose.Schema({
     code: { type: String, required: true, unique: true, uppercase: true },
     valueMin: { type: Number, required: true, min: 1 },
     valueMax: { type: Number, required: true, min: 1 },
@@ -108,14 +103,9 @@ const SettingsSchema = new mongoose.Schema({
         holderName: String,
         number: {
           type: String,
-          // NOVO: Validador para garantir que os números dos métodos de depósito também são 9 dígitos
-          validate: {
-            validator: function(v) {
-              return /^\d{9}$/.test(v);
-            },
-            message: props => `${props.value} não é um número de telefone válido para método de depósito (deve conter 9 dígitos numéricos)!`
-          },
-          required: true // Torna obrigatório para integridade dos dados
+          // REMOVIDO: Validador estrito de 9 dígitos.
+          // A validação e normalização flexível será feita nos controladores.
+          required: true // Mantém como obrigatório
         },
         isActive: { type: Boolean, default: true }
     }],

@@ -3,6 +3,8 @@ const asyncHandler = require('express-async-handler');
 const bcrypt = require('bcryptjs');
 const { Admin, User, Transaction, PlanInstance, Banner, Settings, LotteryCode } = require('./models');
 const { generateToken, generateLotteryCode } = require('./utils');
+// NOVO: Importar as funções de normalização do userController
+const { standardizePhoneNumber, generatePhoneQueryArray } = require('./userController');
 
 // @desc    Autenticar (login) o administrador
 // @route   POST /api/admin/login
@@ -29,7 +31,7 @@ const loginAdmin = asyncHandler(async (req, res) => {
 // @route   GET /api/admin/users
 // @access  Admin
 const getAllUsers = asyncHandler(async (req, res) => {
-    // ATUALIZADO: Buscar todos os usuários e selecionar o telefone (9 dígitos)
+    // ATUALIZADO: Buscar todos os usuários
     const users = await User.find({}).select('-pin');
     res.json(users);
 });
@@ -48,11 +50,14 @@ const searchUsers = asyncHandler(async (req, res) => {
     // Verifica se a query parece um ID de 5 dígitos
     if (/^\d{5}$/.test(query)) {
         user = await User.findOne({ userId: query }).select('-pin');
-    } else if (/^\d{9}$/.test(query)) { // ATUALIZADO: Verifica 9 dígitos para número de telefone
-        user = await User.findOne({ phone: query }).select('-pin');
-    } else {
-        res.status(400);
-        throw new Error('Formato de pesquisa inválido. Use um ID de 5 dígitos ou um número de telefone de 9 dígitos.');
+    } else { // Assume que é um número de telefone e tenta buscar de forma flexível
+        try {
+            const phoneQueryArray = generatePhoneQueryArray(query); // NORMALIZAÇÃO FLEXÍVEL AQUI
+            user = await User.findOne({ phone: { $in: phoneQueryArray } }).select('-pin');
+        } catch (error) {
+            res.status(400);
+            throw new Error(`Formato de pesquisa de telefone inválido: ${error.message}`);
+        }
     }
 
     if (!user) {
@@ -214,22 +219,19 @@ const resetUserPin = asyncHandler(async (req, res) => {
     res.json({ message: `PIN do usuário ${user.userId} redefinido com sucesso. Novo PIN: ${newPin}` });
 });
 
-// @desc    NOVO: Atualizar o número de telefone de um usuário
+// @desc    Atualizar o número de telefone de um usuário
 // @route   PUT /api/admin/users/:id/phone
 // @access  Admin
 const updateUserPhoneNumber = asyncHandler(async (req, res) => {
-    const { newPhone } = req.body;
+    const { newPhone: rawNewPhone } = req.body;
     const userId = req.params.id;
 
-    if (!newPhone) {
+    if (!rawNewPhone) {
         res.status(400);
         throw new Error('Por favor, forneça o novo número de telefone.');
     }
-    // NOVO: Validação do formato do telefone (9 dígitos)
-    if (!/^\d{9}$/.test(newPhone)) {
-        res.status(400);
-        throw new Error('O novo número de telefone é inválido. Por favor, insira 9 dígitos numéricos.');
-    }
+    
+    const newPhone = standardizePhoneNumber(rawNewPhone); // PADRONIZAÇÃO AQUI
 
     const user = await User.findById(userId);
     if (!user) {
@@ -237,20 +239,20 @@ const updateUserPhoneNumber = asyncHandler(async (req, res) => {
         throw new Error('Usuário não encontrado.');
     }
 
-    // Verificar se o novo número já existe para outro usuário
+    // Verificar se o novo número (padronizado) já existe para outro usuário
     const phoneExistsForAnotherUser = await User.findOne({ phone: newPhone, _id: { $ne: userId } });
     if (phoneExistsForAnotherUser) {
         res.status(400);
         throw new Error('Este número de telefone já está em uso por outro usuário.');
     }
 
-    user.phone = newPhone; // Atualiza com o número de 9 dígitos
+    user.phone = newPhone; // Salva o número padronizado ("+258XXXXXXXXX")
     await user.save();
 
     res.json({ message: `Número de telefone do usuário ${user.userId} atualizado para ${newPhone} com sucesso.`, user });
 });
 
-// @desc    NOVO: Apagar a conta de um usuário
+// @desc    Apagar a conta de um usuário
 // @route   DELETE /api/admin/users/:id
 // @access  Admin
 const deleteUser = asyncHandler(async (req, res) => {
@@ -269,7 +271,7 @@ const deleteUser = asyncHandler(async (req, res) => {
     // Por enquanto, o campo 'invitedBy' desses usuários permanecerá com um ObjectId que não existe mais.
     // Isso é aceitável, mas pode-se decidir nullificar esses campos se necessário.
 
-    await user.deleteOne(); // Finalmente, remove o usuário
+    await user.deleteOne();
 
     res.json({ message: 'Conta de usuário, planos e transações associadas deletados com sucesso.' });
 });
@@ -281,7 +283,7 @@ const deleteUser = asyncHandler(async (req, res) => {
 // @route   GET /api/admin/deposits
 // @access  Admin
 const getPendingDeposits = asyncHandler(async (req, res) => {
-    // ATUALIZADO: A populção de 'user' agora busca o telefone como 9 dígitos
+    // ATUALIZADO: A populção de 'user' agora busca o telefone (que estará no formato padronizado)
     const deposits = await Transaction.find({ type: 'deposit', status: 'pending' }).populate('user', 'userId name phone');
     res.json(deposits);
 });
@@ -330,7 +332,7 @@ const rejectDeposit = asyncHandler(async (req, res) => {
 // @route   GET /api/admin/withdrawals
 // @access  Admin
 const getPendingWithdrawals = asyncHandler(async (req, res) => {
-    // ATUALIZADO: A populção de 'user' agora busca o telefone como 9 dígitos
+    // ATUALIZADO: A populção de 'user' agora busca o telefone (que estará no formato padronizado)
     const withdrawals = await Transaction.find({ type: 'withdrawal', status: 'pending' })
                                          .populate('user', 'userId name phone walletBalance hasActivatedPlan'); 
     res.json(withdrawals);
@@ -491,7 +493,7 @@ const toggleLotteryCodeStatus = asyncHandler(async (req, res) => {
     const code = await LotteryCode.findById(req.params.id);
     if (!code) {
         res.status(404);
-        throw new Error('Código de sorteio não encontrado.');
+        throw new new Error('Código de sorteio não encontrado.');
     }
     code.isActive = !code.isActive;
     await code.save();
@@ -538,7 +540,7 @@ const updateSettings = asyncHandler(async (req, res) => {
         const num = Number(value);
         if (isNaN(num) || num < 0) {
             res.status(400);
-            throw new new Error(`O campo '${fieldName}' deve ser um número válido e não negativo.`);
+            throw new Error(`O campo '${fieldName}' deve ser um número válido e não negativo.`);
         }
         return num;
     };
@@ -577,12 +579,20 @@ const updateSettings = asyncHandler(async (req, res) => {
     }
 
     if (Array.isArray(depositMethods)) {
-        validatedBody.depositMethods = depositMethods.map(method => ({
-            name: method.name,
-            holderName: method.holderName,
-            number: method.number,
-            isActive: method.isActive
-        }));
+        // NORMALIZAÇÃO AQUI para cada número de método de depósito
+        validatedBody.depositMethods = depositMethods.map(method => {
+            try {
+                return {
+                    name: method.name,
+                    holderName: method.holderName,
+                    number: standardizePhoneNumber(method.number), // PADRONIZAÇÃO AQUI
+                    isActive: method.isActive
+                };
+            } catch (error) {
+                res.status(400);
+                throw new Error(`Número de telefone inválido no método de depósito "${method.name}": ${error.message}`);
+            }
+        });
     }
 
     const updatedSettings = await Settings.findOneAndUpdate(
@@ -602,8 +612,8 @@ module.exports = {
     toggleUserBlock,
     updateUserBalance,
     resetUserPin,
-    updateUserPhoneNumber, // NOVO: Exporta a função
-    deleteUser, // NOVO: Exporta a função
+    updateUserPhoneNumber,
+    deleteUser,
     getPendingDeposits,
     approveDeposit,
     rejectDeposit,

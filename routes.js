@@ -72,11 +72,13 @@ adminRouter.post('/login', adminController.loginAdmin);
 
 // --- Gerenciamento de Usuários ---
 adminRouter.get('/users', protectAdmin, adminController.getAllUsers);
-adminRouter.get('/users/search', protectAdmin, adminController.searchUsers); // ATUALIZADO: Usar a nova função searchUsers
+adminRouter.get('/users/search', protectAdmin, adminController.searchUsers);
 adminRouter.get('/users/:id/details', protectAdmin, adminController.getUserDetailsForAdmin);
 adminRouter.put('/users/:id/block', protectAdmin, adminController.toggleUserBlock);
 adminRouter.put('/users/:id/balance', protectAdmin, adminController.updateUserBalance);
 adminRouter.put('/users/:id/reset-pin', protectAdmin, adminController.resetUserPin);
+adminRouter.put('/users/:id/phone', protectAdmin, adminController.updateUserPhoneNumber); // NOVO: Rota para editar telefone
+adminRouter.delete('/users/:id', protectAdmin, adminController.deleteUser); // NOVO: Rota para apagar usuário
 
 // --- Gerenciamento de Planos ---
 adminRouter.get('/plans', protectAdmin, plansController.getAllPlansForAdmin);
