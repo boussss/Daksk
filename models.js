@@ -12,8 +12,8 @@ const UserSchema = new mongoose.Schema({
     type: String, 
     default: 'https://res.cloudinary.com/dje6f5k5u/image/upload/v1625247913/default_user_icon.png' // URL de um ícone de usuário padrão
   },
-  walletBalance: { type: Number, default: 0 }, // Saldo real (depósitos + lucros coletados)
-  bonusBalance: { type: Number, default: 0 }, // Saldo de bônus (não sacável diretamente)
+  walletBalance: { type: Number, default: 0 }, // Saldo real (depósitos + lucros coletados + saldo de boas-vindas)
+  // O campo bonusBalance foi REMOVIDO daqui.
   invitedBy: { type: String, default: null }, // Armazena o userId de quem convidou
   activePlans: [{
     planId: { type: mongoose.Schema.Types.ObjectId, ref: 'Plan' },
@@ -50,7 +50,7 @@ const PlanSchema = new mongoose.Schema({
   dailyIncomeValue: { type: Number, required: true },
   duration: { type: Number, required: true }, // Duração em dias
   imageUrl: { type: String, required: true },
-  isActive: { type: Boolean, default: true } // Status (ativo/inativo) em vez de expiração
+  isActive: { type: Boolean, default: true }
 }, { timestamps: true });
 
 // =================
@@ -87,19 +87,15 @@ AdminSchema.pre('save', async function(next) {
 // ESQUEMA DE CONFIGURAÇÕES GLOBAIS
 // =================
 const SettingsSchema = new mongoose.Schema({
-    // Usaremos um único documento para guardar todas as configurações
     settingId: { type: String, default: "global_settings", unique: true },
-    welcomeBonus: { type: Number, default: 50 },
-    referralCommissionPercentage: { type: Number, default: 15 }, // % sobre o valor do plano do convidado
-    dailyProfitSharePercentage: { type: Number, default: 5 }, // % sobre o lucro diário do convidado
-    
-    // --- CAMPOS ATUALIZADOS AQUI ---
+    welcomeBonus: { type: Number, default: 50 }, // Renomeado para "welcomeBonus" para clareza
+    referralCommissionPercentage: { type: Number, default: 15 },
+    dailyProfitSharePercentage: { type: Number, default: 5 },
     mpesaNumber: { type: String, default: "" },
-    mpesaHolderName: { type: String, default: "" }, // NOVO CAMPO
+    mpesaHolderName: { type: String, default: "" },
     emolaNumber: { type: String, default: "" },
-    emolaHolderName: { type: String, default: "" }, // NOVO CAMPO
-
-    luckWheelEnabled: { type: Boolean, default: false } // Para a roleta da sorte
+    emolaHolderName: { type: String, default: "" },
+    luckWheelEnabled: { type: Boolean, default: false }
 });
 
 // =================

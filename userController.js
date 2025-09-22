@@ -24,17 +24,29 @@ const registerUser = async (req, res) => {
     const userId = await generateUniqueUserId();
 
     const settings = await Settings.findOne({ settingId: 'global_settings' });
-    const welcomeBonus = settings ? settings.welcomeBonus : 0;
+    const welcomeAmount = settings ? settings.welcomeBonus : 0; // Pega o saldo de boas-vindas
 
     const user = await User.create({
       phoneNumber,
       password,
       userId,
       invitedBy: inviterId || null,
-      bonusBalance: welcomeBonus
+      walletBalance: welcomeAmount // Adiciona o saldo diretamente na carteira principal
+      // O campo bonusBalance foi removido
     });
 
     if (user) {
+      // Cria uma transação para registrar o saldo de boas-vindas
+      if (welcomeAmount > 0) {
+          await Transaction.create({
+              user: user._id,
+              type: 'bonus', // Mantemos o tipo para clareza no histórico
+              amount: welcomeAmount,
+              status: 'completed',
+              details: 'Saldo de Boas-Vindas'
+          });
+      }
+
       res.status(201).json({
         _id: user._id,
         userId: user.userId,
@@ -92,10 +104,10 @@ const getUserProfile = async (req, res) => {
             return res.status(404).json({ message: 'Usuário não encontrado.' });
         }
 
-        // Calcular estatísticas
         const transactions = await Transaction.find({ user: user._id });
         
         const totalEarned = transactions
+            // A menção a 'bonus' aqui pode ser mantida se você usar transações do tipo 'bonus' para outras coisas (ex: roleta)
             .filter(tx => (tx.type === 'earning' || tx.type === 'commission' || tx.type === 'bonus') && tx.status === 'completed')
             .reduce((acc, tx) => acc + tx.amount, 0);
 
@@ -105,8 +117,7 @@ const getUserProfile = async (req, res) => {
 
         const teamMembers = await User.countDocuments({ invitedBy: user.userId });
 
-        // Adiciona as estatísticas ao objeto do usuário que será enviado
-        const userProfile = user.toObject(); // Converte para um objeto simples para poder adicionar propriedades
+        const userProfile = user.toObject();
         userProfile.stats = {
             totalEarned,
             totalWithdrawn,
@@ -133,7 +144,7 @@ const updateUserProfilePicture = async (req, res) => {
         
         const user = await User.findById(req.user._id);
         if (user) {
-            user.profilePicture = req.file.path; // URL do Cloudinary
+            user.profilePicture = req.file.path;
             await user.save();
             res.json({ message: 'Foto de perfil atualizada com sucesso.', profilePicture: user.profilePicture });
         } else {
@@ -187,7 +198,7 @@ const createDepositRequest = async (req, res) => {
             type: 'deposit',
             amount: Number(amount),
             status: 'pending',
-            proofScreenshot: req.file.path // URL do Cloudinary
+            proofScreenshot: req.file.path
         });
 
         res.status(201).json({ message: 'Solicitação de depósito enviada com sucesso. Aguarde a aprovação do administrador.' });
@@ -259,19 +270,16 @@ const getPublicSettings = async (req, res) => {
     try {
         const settings = await Settings.findOne({ settingId: 'global_settings' });
         if (settings) {
-            // --- RESPOSTA ATUALIZADA AQUI ---
             res.json({
                 mpesaNumber: settings.mpesaNumber,
-                mpesaHolderName: settings.mpesaHolderName, // NOVO
+                mpesaHolderName: settings.mpesaHolderName,
                 emolaNumber: settings.emolaNumber,
-                emolaHolderName: settings.emolaHolderName   // NOVO
+                emolaHolderName: settings.emolaHolderName
             });
         } else {
             res.json({
-                mpesaNumber: "",
-                mpesaHolderName: "",
-                emolaNumber: "",
-                emolaHolderName: ""
+                mpesaNumber: "", mpesaHolderName: "",
+                emolaNumber: "", emolaHolderName: ""
             });
         }
     } catch (error) {

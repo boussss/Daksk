@@ -92,13 +92,14 @@ const toggleUserBlock = async (req, res) => {
  * @access  Private (Admin)
  */
 const updateUserBalance = async (req, res) => {
-    const { walletBalance, bonusBalance } = req.body;
+    // --- ALTERAÇÃO AQUI ---
+    // Removido 'bonusBalance' dos parâmetros. A função agora lida apenas com o saldo real.
+    const { walletBalance } = req.body;
     try {
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ message: 'Usuário não encontrado.' });
 
         if (walletBalance !== undefined) user.walletBalance = Number(walletBalance);
-        if (bonusBalance !== undefined) user.bonusBalance = Number(bonusBalance);
         
         await user.save();
         res.json({ message: 'Saldo do usuário atualizado com sucesso.', user });
@@ -257,7 +258,7 @@ const getSettings = async (req, res) => {
     try {
         let settings = await Settings.findOne({ settingId: 'global_settings' });
         if (!settings) {
-            settings = await Settings.create({}); // Cria com valores padrão se não existir
+            settings = await Settings.create({});
         }
         res.json(settings);
     } catch (error) {
@@ -275,7 +276,7 @@ const updateSettings = async (req, res) => {
         const settings = await Settings.findOneAndUpdate(
             { settingId: 'global_settings' },
             req.body,
-            { new: true, upsert: true } // 'upsert' cria se não existir
+            { new: true, upsert: true }
         );
         res.json({ message: 'Configurações atualizadas com sucesso.', settings });
     } catch (error) {
