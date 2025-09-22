@@ -81,16 +81,42 @@ const loginUser = async (req, res) => {
 };
 
 /**
- * @desc    Obter perfil do usuário logado
+ * @desc    Obter perfil do usuário logado (ATUALIZADO com estatísticas)
  * @route   GET /api/users/profile
  * @access  Private
  */
 const getUserProfile = async (req, res) => {
-    const user = await User.findById(req.user._id).select('-password');
-    if (user) {
-        res.json(user);
-    } else {
-        res.status(404).json({ message: 'Usuário não encontrado.' });
+    try {
+        const user = await User.findById(req.user._id).select('-password').populate('activePlans.planId', 'name imageUrl');
+        if (!user) {
+            return res.status(404).json({ message: 'Usuário não encontrado.' });
+        }
+
+        // Calcular estatísticas
+        const transactions = await Transaction.find({ user: user._id });
+        
+        const totalEarned = transactions
+            .filter(tx => (tx.type === 'earning' || tx.type === 'commission' || tx.type === 'bonus') && tx.status === 'completed')
+            .reduce((acc, tx) => acc + tx.amount, 0);
+
+        const totalWithdrawn = transactions
+            .filter(tx => tx.type === 'withdrawal' && tx.status === 'completed')
+            .reduce((acc, tx) => acc + tx.amount, 0);
+
+        const teamMembers = await User.countDocuments({ invitedBy: user.userId });
+
+        // Adiciona as estatísticas ao objeto do usuário que será enviado
+        const userProfile = user.toObject(); // Converte para um objeto simples para poder adicionar propriedades
+        userProfile.stats = {
+            totalEarned,
+            totalWithdrawn,
+            teamMembers
+        };
+        
+        res.json(userProfile);
+
+    } catch (error) {
+        res.status(500).json({ message: 'Erro ao buscar perfil do usuário.', error: error.message });
     }
 };
 
@@ -128,7 +154,6 @@ const getReferralInfo = async (req, res) => {
         const settings = await Settings.findOne({ settingId: 'global_settings' });
         const invitedUsers = await User.find({ invitedBy: req.user.userId }).select('userId createdAt');
         
-        // Corrigido para apontar para index.html
         const referralLink = `${process.env.APP_URL}/index.html?ref=${req.user.userId}`;
 
         res.json({
@@ -173,12 +198,12 @@ const createDepositRequest = async (req, res) => {
 };
 
 /**
- * @desc    Criar uma solicitação de saque (MODIFICADO)
+ * @desc    Criar uma solicitação de saque
  * @route   POST /api/users/withdrawal
  * @access  Private
  */
 const createWithdrawalRequest = async (req, res) => {
-    const { amount, accountHolderName } = req.body; // Adicionado accountHolderName
+    const { amount, accountHolderName, phoneNumber } = req.body;
 
     try {
         const user = await User.findById(req.user._id);
@@ -186,16 +211,13 @@ const createWithdrawalRequest = async (req, res) => {
         if (!user.hasDeposited) {
             return res.status(403).json({ message: 'Você precisa ter ativado um plano para poder sacar.' });
         }
-
         if (user.walletBalance < amount) {
             return res.status(400).json({ message: 'Saldo insuficiente.' });
         }
-
-        if (!accountHolderName) {
-            return res.status(400).json({ message: 'O nome do titular da conta é obrigatório.' });
+        if (!accountHolderName || !phoneNumber) {
+            return res.status(400).json({ message: 'O nome do titular e o número de telefone são obrigatórios.' });
         }
 
-        // Subtrai o valor da carteira e cria a transação pendente
         user.walletBalance -= Number(amount);
         await user.save();
 
@@ -204,7 +226,7 @@ const createWithdrawalRequest = async (req, res) => {
             type: 'withdrawal',
             amount: Number(amount),
             status: 'pending',
-            details: `Saque para: ${accountHolderName} - ${user.phoneNumber}` // Salva o nome e o número nos detalhes
+            details: `Saque para: ${accountHolderName} - ${phoneNumber}`
         });
 
         res.status(201).json({ message: 'Solicitação de saque enviada com sucesso.' });
@@ -228,9 +250,8 @@ const getUserTransactions = async (req, res) => {
     }
 };
 
-
 /**
- * @desc    [NOVO] Obter configurações públicas (números de pagamento)
+ * @desc    Obter configurações públicas (números de pagamento)
  * @route   GET /api/settings/public
  * @access  Public
  */
@@ -243,7 +264,6 @@ const getPublicSettings = async (req, res) => {
                 emolaNumber: settings.emolaNumber
             });
         } else {
-            // Retorna strings vazias se as configurações não existirem para evitar erros no frontend
             res.json({
                 mpesaNumber: "",
                 emolaNumber: ""
@@ -254,7 +274,6 @@ const getPublicSettings = async (req, res) => {
     }
 };
 
-
 module.exports = {
   registerUser,
   loginUser,
@@ -264,5 +283,5 @@ module.exports = {
   createDepositRequest,
   createWithdrawalRequest,
   getUserTransactions,
-  getPublicSettings // Não se esqueça de exportar a nova função
+  getPublicSettings
 };
