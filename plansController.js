@@ -7,8 +7,7 @@ const { Plan, User, Transaction, Settings } = require('./models');
  */
 const getAllPlans = async (req, res) => {
   try {
-    // Busca apenas os planos que estão marcados como ativos
-    const plans = await Plan.find({ isActive: true });
+    const plans = await Plan.find({ isActive: true }).sort({ minAmount: 1 }); // Ordena por valor
     res.json(plans);
   } catch (error) {
     res.status(500).json({ message: 'Erro no servidor ao buscar os planos.', error: error.message });
@@ -16,55 +15,77 @@ const getAllPlans = async (req, res) => {
 };
 
 /**
- * @desc    Ativar um plano de investimento para o usuário logado
+ * @desc    Ativar um plano ou fazer upgrade (LÓGICA ATUALIZADA)
  * @route   POST /api/plans/activate
  * @access  Private
  */
 const activatePlan = async (req, res) => {
-  const { planId, amount } = req.body;
+  const { planId, amount } = req.body; // 'amount' aqui é o valor total do novo plano (ex: minAmount)
   const userId = req.user._id;
 
   try {
-    const plan = await Plan.findById(planId);
+    const newPlan = await Plan.findById(planId);
     const user = await User.findById(userId);
     const settings = await Settings.findOne({ settingId: 'global_settings' });
 
-    if (!plan || !plan.isActive) {
+    if (!newPlan || !newPlan.isActive) {
       return res.status(404).json({ message: 'Plano não encontrado ou inativo.' });
     }
-
-    const investmentAmount = Number(amount);
-    if (investmentAmount < plan.minAmount || investmentAmount > plan.maxAmount) {
-      return res.status(400).json({ message: `O valor do investimento deve estar entre ${plan.minAmount} MT e ${plan.maxAmount} MT.` });
+    
+    // O valor do investimento deve ser o valor exato do plano (minAmount)
+    const investmentAmount = Number(amount); 
+    if (investmentAmount !== newPlan.minAmount) {
+        return res.status(400).json({ message: `O investimento para este plano deve ser exatamente ${newPlan.minAmount} MT.` });
     }
 
-    if (user.walletBalance < investmentAmount) {
-      return res.status(400).json({ message: 'Saldo insuficiente na carteira.' });
+    // Encontra o plano ativo atual do usuário, se existir
+    const currentActivePlan = user.activePlans.find(p => p.isActive === true);
+    let costToUser = investmentAmount;
+    
+    // LÓGICA DE UPGRADE
+    if (currentActivePlan) {
+      // Verifica se o novo plano é realmente um upgrade
+      if (investmentAmount <= currentActivePlan.investedAmount) {
+        return res.status(400).json({ message: 'Só é permitido fazer upgrade para um plano de valor superior.' });
+      }
+
+      // Calcula a diferença a ser paga
+      const difference = investmentAmount - currentActivePlan.investedAmount;
+      costToUser = difference;
+
+      // Desativa o plano antigo
+      currentActivePlan.isActive = false;
+    }
+    
+    // Verifica se o usuário tem saldo suficiente para a operação
+    if (user.walletBalance < costToUser) {
+      return res.status(400).json({ message: `Saldo insuficiente. Você precisa de ${costToUser.toFixed(2)} MT.` });
     }
 
-    // 1. Debita o valor do saldo do usuário
-    user.walletBalance -= investmentAmount;
-
-    // 2. Calcula os detalhes do plano ativado
-    const dailyProfit = plan.dailyIncomeType === 'percentage'
-      ? (investmentAmount * plan.dailyIncomeValue) / 100
-      : plan.dailyIncomeValue;
+    // 1. Debita o custo do saldo do usuário (diferença ou valor total)
+    user.walletBalance -= costToUser;
+    
+    // 2. Calcula os detalhes do novo plano ativado
+    const dailyProfit = newPlan.dailyIncomeType === 'percentage'
+      ? (investmentAmount * newPlan.dailyIncomeValue) / 100
+      : newPlan.dailyIncomeValue;
     
     const startDate = new Date();
     const endDate = new Date(startDate);
-    endDate.setDate(startDate.getDate() + plan.duration);
+    endDate.setDate(startDate.getDate() + newPlan.duration);
 
-    // 3. Adiciona o plano à lista de planos ativos do usuário
+    // 3. Adiciona o novo plano à lista de planos ativos do usuário
     user.activePlans.push({
-      planId: plan._id,
+      planId: newPlan._id,
       investedAmount: investmentAmount,
       dailyProfit: dailyProfit,
       startDate: startDate,
       endDate: endDate,
-      lastCollectionDate: null, // Nenhum lucro coletado ainda
+      lastCollectionDate: null,
+      isActive: true // Garante que o novo plano esteja ativo
     });
 
-    // 4. Marca que o usuário já depositou/ativou um plano (habilita saques)
+    // 4. Marca que o usuário já ativou um plano (habilita saques)
     user.hasDeposited = true;
     
     // 5. Salva as alterações no usuário
@@ -74,31 +95,30 @@ const activatePlan = async (req, res) => {
     await Transaction.create({
         user: userId,
         type: 'investment',
-        amount: investmentAmount,
+        amount: costToUser, // Registra na transação apenas o valor que saiu da carteira
         status: 'completed',
-        details: `Ativação do plano: ${plan.name}`
+        details: `${currentActivePlan ? 'Upgrade para o plano' : 'Ativação do plano'}: ${newPlan.name}`
     });
 
-    // 7. Lógica de Comissão de Referência
+    // 7. Lógica de Comissão de Referência (baseado no valor total do novo plano)
     if (user.invitedBy) {
         const inviter = await User.findOne({ userId: user.invitedBy });
         if (inviter) {
             const commission = (investmentAmount * settings.referralCommissionPercentage) / 100;
-            inviter.walletBalance += commission; // Comissão vai para o saldo real (sacável)
+            inviter.walletBalance += commission;
             await inviter.save();
 
-            // Cria uma transação para a comissão
             await Transaction.create({
                 user: inviter._id,
                 type: 'commission',
                 amount: commission,
                 status: 'completed',
-                details: `Comissão de 15% pelo investimento de ${user.userId}`
+                details: `Comissão de ${settings.referralCommissionPercentage}% pelo investimento de ${user.userId} no plano ${newPlan.name}`
             });
         }
     }
     
-    res.status(200).json({ message: `Plano '${plan.name}' ativado com sucesso!` });
+    res.status(200).json({ message: `${currentActivePlan ? 'Upgrade realizado' : 'Plano ativado'} com sucesso!` });
 
   } catch (error) {
     res.status(500).json({ message: 'Erro no servidor ao ativar o plano.', error: error.message });
