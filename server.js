@@ -1,14 +1,14 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
-const { connectDB, cloudinary } = require('./config');
+// **Linha crucial:** Importando e desestruturando o objeto do config.js
+const { connectDB, cloudinary } = require('./config'); 
 const { protectUser, protectAdmin } = require('./auth');
 const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 // Importar Models para inicialização
-const { Admin, Settings, User } = require('./models');
-const bcrypt = require('bcryptjs');
+const { Admin, Settings } = require('./models');
 
 // Importar Controllers
 const userController = require('./userController');
@@ -19,14 +19,14 @@ const adminController = require('./adminController');
 // Carregar variáveis de ambiente
 dotenv.config();
 
-// Conectar ao Banco de Dados
+// Conectar ao Banco de Dados - AGORA DEVE FUNCIONAR
 connectDB();
 
 const app = express();
 
 // Configuração do CORS
 const corsOptions = {
-    origin: process.env.APP_URL || '*', // Permite requisições da URL do frontend ou todas, para desenvolvimento
+    origin: process.env.APP_URL || '*',
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
     credentials: true,
 };
@@ -39,8 +39,8 @@ app.use(express.json());
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'indodax', // Nome da pasta no Cloudinary
-    format: async (req, file) => 'png', // Formato da imagem
+    folder: 'indodax',
+    format: async (req, file) => 'png',
     public_id: (req, file) => `${file.fieldname}_${Date.now()}`,
   },
 });
@@ -52,7 +52,6 @@ const upload = multer({ storage: storage });
 // ===================================
 const initializeDefaultData = async () => {
     try {
-        // 1. Criar Administrador Padrão
         const adminExists = await Admin.findOne({ phoneNumber: process.env.ADMIN_DEFAULT_PHONE });
         if (!adminExists) {
             await Admin.create({
@@ -62,7 +61,6 @@ const initializeDefaultData = async () => {
             console.log('Administrador padrão criado com sucesso.');
         }
 
-        // 2. Criar Configurações Globais
         const settingsExist = await Settings.findOne({ settingId: 'global_settings' });
         if (!settingsExist) {
             await Settings.create({});
@@ -74,7 +72,7 @@ const initializeDefaultData = async () => {
 };
 
 // =======================
-// ROTAS DA API
+// ROTAS DA API (sem alterações aqui, mantive para o arquivo ser completo)
 // =======================
 
 // --- Rotas de Usuário ---
@@ -97,7 +95,6 @@ app.get('/api/bonus/history', protectUser, bonusController.getCollectionHistory)
 
 // --- Rotas de Administrador ---
 app.post('/api/admin/login', adminController.loginAdmin);
-// Rotas protegidas de Admin
 app.get('/api/admin/users', protectAdmin, adminController.getUsers);
 app.get('/api/admin/users/:id', protectAdmin, adminController.getUserDetails);
 app.put('/api/admin/users/:id/block', protectAdmin, adminController.toggleUserBlock);
@@ -125,5 +122,5 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
-  initializeDefaultData(); // Chama a função de inicialização
+  initializeDefaultData();
 });

@@ -1,25 +1,28 @@
+const mongoose = require('mongoose');
+const cloudinary = require('cloudinary').v2;
 const dotenv = require('dotenv');
-const path = require('path');
 
 // Carrega as variáveis de ambiente do arquivo .env
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+dotenv.config();
 
-module.exports = {
-  mongoURI: process.env.MONGO_URI,
-  port: process.env.PORT || 5000,
-  jwtSecret: process.env.JWT_SECRET,
-  cloudinary: {
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-  },
-  baseUrl: process.env.BASE_URL,
-  // Configurações de bônus que o admin pode alterar
-  bonusSettings: {
-    welcomeBonus: 50, // Valor padrão, pode ser sobrescrito pelo admin no DB
-    referralCommissionRate: 0.15, // 15% do valor do plano do convidado
-    dailyCommissionRate: 0.05, // 5% do lucro diário do convidado
-  },
-  // URL de perfil padrão para novos usuários
-  defaultProfilePic: 'https://res.cloudinary.com/dje6f5k5u/image/upload/v1677399539/default-user-icon_s6k6z6.png' // Exemplo de URL
+// Configuração do Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// Função para conectar ao MongoDB
+const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log('MongoDB Conectado com Sucesso!');
+  } catch (err) {
+    console.error('Erro ao conectar com o MongoDB:', err.message);
+    // Encerra o processo com falha
+    process.exit(1);
+  }
 };
+
+// **Linha crucial:** Exportando um objeto que contém a função 'connectDB'
+module.exports = { connectDB, cloudinary };
