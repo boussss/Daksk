@@ -1,44 +1,52 @@
 const express = require('express');
 const dotenv = require('dotenv');
-const cors = require('cors'); // Importamos o cors
+const cors = require('cors');
 const { connectDB, cloudinary } = require('./config');
 const { protectUser, protectAdmin } = require('./auth');
 const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
-// Importar Models e Controllers
+// Importar Models para inicialização
 const { Admin, Settings } = require('./models');
+
+// Importar Controllers
 const userController = require('./userController');
 const plansController = require('./plansController');
 const bonusController = require('./bonusController');
 const adminController = require('./adminController');
 
+// Carregar variáveis de ambiente
 dotenv.config();
+
+// Conectar ao Banco de Dados
 connectDB();
 
 const app = express();
 
-// ===============================================================
-// CORREÇÃO DO CORS: Esta é a principal mudança.
-// app.use(cors(corsOptions)); se torna -> app.use(cors());
-// Isso habilita o CORS para todas as requisições, resolvendo o erro.
+// Middleware para habilitar CORS para todas as requisições
 app.use(cors());
-// ===============================================================
 
+// Middleware para parsear JSON
 app.use(express.json());
 
+// Configuração do Multer para Upload no Cloudinary
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'indodax',
-    format: async (req, file) => 'png',
+    folder: 'indodax', // Nome da pasta no Cloudinary
+    format: async (req, file) => 'png', // Formato da imagem
     public_id: (req, file) => `${file.fieldname}_${Date.now()}`,
   },
 });
+
 const upload = multer({ storage: storage });
 
+// ===================================
+// INICIALIZAÇÃO DE DADOS PADRÃO
+// ===================================
 const initializeDefaultData = async () => {
     try {
+        // 1. Criar Administrador Padrão
         const adminExists = await Admin.findOne({ phoneNumber: process.env.ADMIN_DEFAULT_PHONE });
         if (!adminExists) {
             await Admin.create({
@@ -47,6 +55,8 @@ const initializeDefaultData = async () => {
             });
             console.log('Administrador padrão criado com sucesso.');
         }
+
+        // 2. Criar Configurações Globais
         const settingsExist = await Settings.findOne({ settingId: 'global_settings' });
         if (!settingsExist) {
             await Settings.create({});
@@ -57,20 +67,35 @@ const initializeDefaultData = async () => {
     }
 };
 
-// --- ROTAS DA API (sem alterações) ---
+// =======================
+// ROTAS DA API
+// =======================
+
+// --- Rotas Públicas de Usuário ---
 app.post('/api/users/register', userController.registerUser);
 app.post('/api/users/login', userController.loginUser);
+app.get('/api/settings/public', userController.getPublicSettings); // <-- ESTA É A NOVA ROTA
+
+// --- Rotas Privadas de Usuário ---
 app.get('/api/users/profile', protectUser, userController.getUserProfile);
 app.put('/api/users/profile/picture', protectUser, upload.single('profilePicture'), userController.updateUserProfilePicture);
 app.get('/api/users/referral', protectUser, userController.getReferralInfo);
 app.post('/api/users/deposit', protectUser, upload.single('proofScreenshot'), userController.createDepositRequest);
 app.post('/api/users/withdrawal', protectUser, userController.createWithdrawalRequest);
 app.get('/api/users/transactions', protectUser, userController.getUserTransactions);
+
+// --- Rotas de Planos ---
 app.get('/api/plans', plansController.getAllPlans);
 app.post('/api/plans/activate', protectUser, plansController.activatePlan);
+
+// --- Rotas de Bônus e Coleta ---
 app.post('/api/bonus/collect', protectUser, bonusController.collectDailyEarnings);
 app.get('/api/bonus/history', protectUser, bonusController.getCollectionHistory);
+
+// --- Rotas de Administrador ---
 app.post('/api/admin/login', adminController.loginAdmin);
+
+// Rotas protegidas de Admin
 app.get('/api/admin/users', protectAdmin, adminController.getUsers);
 app.get('/api/admin/users/:id', protectAdmin, adminController.getUserDetails);
 app.put('/api/admin/users/:id/block', protectAdmin, adminController.toggleUserBlock);
@@ -85,9 +110,17 @@ app.get('/api/admin/settings', protectAdmin, adminController.getSettings);
 app.put('/api/admin/settings', protectAdmin, adminController.updateSettings);
 app.post('/api/admin/banners', protectAdmin, upload.single('bannerImage'), adminController.addBanner);
 app.delete('/api/admin/banners/:id', protectAdmin, adminController.deleteBanner);
-app.get('/', (req, res) => res.send('API da Indodax está funcionando!'));
 
+// Rota de Teste
+app.get('/', (req, res) => {
+  res.send('API da Indodax está funcionando!');
+});
+
+// =======================
+// INICIALIZAÇÃO DO SERVIDOR
+// =======================
 const PORT = process.env.PORT || 5000;
+
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
   initializeDefaultData();
