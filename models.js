@@ -92,8 +92,13 @@ const SettingsSchema = new mongoose.Schema({
     welcomeBonus: { type: Number, default: 50 },
     referralCommissionPercentage: { type: Number, default: 15 }, // % sobre o valor do plano do convidado
     dailyProfitSharePercentage: { type: Number, default: 5 }, // % sobre o lucro diário do convidado
+    
+    // --- CAMPOS ATUALIZADOS AQUI ---
     mpesaNumber: { type: String, default: "" },
+    mpesaHolderName: { type: String, default: "" }, // NOVO CAMPO
     emolaNumber: { type: String, default: "" },
+    emolaHolderName: { type: String, default: "" }, // NOVO CAMPO
+
     luckWheelEnabled: { type: Boolean, default: false } // Para a roleta da sorte
 });
 

@@ -152,8 +152,6 @@ const updateUserProfilePicture = async (req, res) => {
 const getReferralInfo = async (req, res) => {
     try {
         const settings = await Settings.findOne({ settingId: 'global_settings' });
-        // --- ALTERAÇÃO AQUI ---
-        // Adicionado 'profilePicture' ao select para que a API retorne a foto dos convidados.
         const invitedUsers = await User.find({ invitedBy: req.user.userId }).select('userId createdAt profilePicture');
         
         const referralLink = `${process.env.APP_URL || 'http://localhost:3000'}/index.html?ref=${req.user.userId}`;
@@ -261,14 +259,19 @@ const getPublicSettings = async (req, res) => {
     try {
         const settings = await Settings.findOne({ settingId: 'global_settings' });
         if (settings) {
+            // --- RESPOSTA ATUALIZADA AQUI ---
             res.json({
                 mpesaNumber: settings.mpesaNumber,
-                emolaNumber: settings.emolaNumber
+                mpesaHolderName: settings.mpesaHolderName, // NOVO
+                emolaNumber: settings.emolaNumber,
+                emolaHolderName: settings.emolaHolderName   // NOVO
             });
         } else {
             res.json({
                 mpesaNumber: "",
-                emolaNumber: ""
+                mpesaHolderName: "",
+                emolaNumber: "",
+                emolaHolderName: ""
             });
         }
     } catch (error) {
