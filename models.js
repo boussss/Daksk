@@ -1,136 +1,118 @@
-// models.js
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
-// --- ESQUEMA DO USUÁRIO ---
+// ==================
+// ESQUEMA DO USUÁRIO
+// ==================
 const UserSchema = new mongoose.Schema({
-  name: { type: String, required: true, trim: true },
-  username: { type: String, required: true, unique: true, lowercase: true, trim: true },
-  phone: {
-    type: String,
-    required: true,
-    unique: true,
-    trim: true,
-    // A validação e normalização flexível será feita nos controladores.
+  userId: { type: String, required: true, unique: true, index: true }, // ID único de 5 dígitos
+  phoneNumber: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  profilePicture: { 
+    type: String, 
+    default: 'https://res.cloudinary.com/dje6f5k5u/image/upload/v1625247913/default_user_icon.png' // URL de um ícone de usuário padrão
   },
-  userId: { type: String, required: true, unique: true, minlength: 5, maxlength: 5 },
-  // ADICIONE ESTA LINHA:
-  pin: { type: String, required: true }, // O PIN hasheado será armazenado aqui
-  profilePicture: { type: String, default: '' },
-  walletBalance: { type: Number, default: 0 },
-  bonusBalance: { type: Number, default: 0 },
-  inviteLink: { type: String },
-  invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-  activePlanInstance: { type: mongoose.Schema.Types.ObjectId, ref: 'PlanInstance', default: null },
-  hasDeposited: { type: Boolean, default: false },
-  hasActivatedPlan: { type: Boolean, default: false },
+  walletBalance: { type: Number, default: 0 }, // Saldo real (depósitos + lucros coletados)
+  bonusBalance: { type: Number, default: 0 }, // Saldo de bônus (não sacável diretamente)
+  invitedBy: { type: String, default: null }, // Armazena o userId de quem convidou
+  activePlans: [{
+    planId: { type: mongoose.Schema.Types.ObjectId, ref: 'Plan' },
+    investedAmount: Number,
+    dailyProfit: Number,
+    startDate: { type: Date, default: Date.now },
+    endDate: Date,
+    lastCollectionDate: Date,
+    totalEarned: { type: Number, default: 0 },
+    isActive: { type: Boolean, default: true }
+  }],
+  hasDeposited: { type: Boolean, default: false }, // Flag para permitir saques
   isBlocked: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now },
+}, { timestamps: true });
+
+// Middleware para criptografar a senha antes de salvar
+UserSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) {
+    return next();
+  }
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+  next();
 });
 
-// --- ESQUEMA DO PLANO (MODELO CRIADO PELO ADMIN) ---
+// =================
+// ESQUEMA DO PLANO DE INVESTIMENTO
+// =================
 const PlanSchema = new mongoose.Schema({
   name: { type: String, required: true },
   minAmount: { type: Number, required: true },
   maxAmount: { type: Number, required: true },
-  dailyYieldType: { type: String, enum: ['percentage', 'fixed'], required: true },
-  dailyYieldValue: { type: Number, required: true },
-  durationDays: { type: Number, required: true },
-  imageUrl: { type: String, default: '' },
-  hashRate: {
-    type: String, 
-    default: 'N/A'
-  },
-});
-
-// --- ESQUEMA DA INSTÂNCIA DO PLANO (PLANO ATIVO DE UM USUÁRIO) ---
-const PlanInstanceSchema = new mongoose.Schema({
-  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  plan: { type: mongoose.Schema.Types.ObjectId, ref: 'Plan', required: true },
-  investedAmount: { type: Number, required: true },
-  dailyProfit: { type: Number, required: true },
-  startDate: { type: Date, default: Date.now },
-  endDate: { type: Date, required: true },
-  lastCollectedDate: { type: Date },
-  totalCollected: { type: Number, default: 0 },
-  status: { type: String, enum: ['active', 'expired'], default: 'active' },
-});
-
-// --- ESQUEMA DE TRANSAÇÕES ---
-const TransactionSchema = new mongoose.Schema({
-  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  type: { type: String, enum: ['deposit', 'withdrawal', 'investment', 'collection', 'commission', 'welcome_bonus', 'lottery_win'], required: true },
-  amount: { type: Number, required: true },
-  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved' },
-  description: String,
-  transactionDetails: {
-    type: Object,
-  },
-  createdAt: { type: Date, default: Date.now },
-});
-
-// --- ESQUEMA DO ADMIN ---
-const AdminSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-});
-
-// --- ESQUEMA DE BANNERS ---
-const BannerSchema = new mongoose.Schema({
+  dailyIncomeType: { type: String, enum: ['percentage', 'fixed'], required: true },
+  dailyIncomeValue: { type: Number, required: true },
+  duration: { type: Number, required: true }, // Duração em dias
   imageUrl: { type: String, required: true },
-  linkUrl: { type: String },
-  isActive: { type: Boolean, default: true },
+  isActive: { type: Boolean, default: true } // Status (ativo/inativo) em vez de expiração
+}, { timestamps: true });
+
+// =================
+// ESQUEMA DE TRANSAÇÕES
+// =================
+const TransactionSchema = new mongoose.Schema({
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    type: { type: String, enum: ['deposit', 'withdrawal', 'investment', 'earning', 'bonus', 'commission'], required: true },
+    amount: { type: Number, required: true },
+    status: { type: String, enum: ['pending', 'completed', 'rejected'], default: 'pending' },
+    proofScreenshot: { type: String }, // Para comprovantes de depósito
+    details: { type: String } // Ex: "Lucro diário do Plano VIP"
+}, { timestamps: true });
+
+// =================
+// ESQUEMA DO ADMINISTRADOR
+// =================
+const AdminSchema = new mongoose.Schema({
+    phoneNumber: { type: String, required: true, unique: true },
+    password: { type: String, required: true }
+}, { timestamps: true });
+
+// Middleware para criptografar a senha do admin antes de salvar
+AdminSchema.pre('save', async function(next) {
+    if (!this.isModified('password')) {
+        return next();
+    }
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
 });
 
-// --- NOVO ESQUEMA: CÓDIGO DE SORTEIO ---
-const LotteryCodeSchema = new mongoose.mongoose.Schema({
-    code: { type: String, required: true, unique: true, uppercase: true },
-    valueMin: { type: Number, required: true, min: 1 },
-    valueMax: { type: Number, required: true, min: 1 },
-    maxUses: { type: Number, required: true, min: 1 },
-    currentUses: { type: Number, default: 0 },
-    expiresAt: { type: Date, required: true },
-    isActive: { type: Boolean, default: true },
-    claimedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    createdAt: { type: Date, default: Date.now },
-});
-
-// --- ESQUEMA DE CONFIGURAÇÕES ---
+// =================
+// ESQUEMA DE CONFIGURAÇÕES GLOBAIS
+// =================
 const SettingsSchema = new mongoose.Schema({
-    configKey: { type: String, default: "main_settings", unique: true }, 
-    
-    // Métodos de pagamento
-    depositMethods: [{
-        name: String,
-        holderName: String,
-        number: {
-          type: String,
-          // A validação e normalização flexível será feita nos controladores.
-          required: true // Mantém como obrigatório
-        },
-        isActive: { type: Boolean, default: true }
-    }],
-    
-    // Bônus e Comissões
+    // Usaremos um único documento para guardar todas as configurações
+    settingId: { type: String, default: "global_settings", unique: true },
     welcomeBonus: { type: Number, default: 50 },
-    referralCommissionRate: { type: Number, default: 30 },
-    dailyCommissionRate: { type: Number, default: 15 },
-
-    // Limites e Taxas
-    depositMin: { type: Number, default: 50 },
-    depositMax: { type: Number, default: 25000 },
-    withdrawalMin: { type: Number, default: 100 },
-    withdrawalMax: { type: Number, default: 25000 },
-    withdrawalFee: { type: Number, default: 3 },
+    referralCommissionPercentage: { type: Number, default: 15 }, // % sobre o valor do plano do convidado
+    dailyProfitSharePercentage: { type: Number, default: 5 }, // % sobre o lucro diário do convidado
+    mpesaNumber: { type: String, default: "" },
+    emolaNumber: { type: String, default: "" },
+    luckWheelEnabled: { type: Boolean, default: false } // Para a roleta da sorte
 });
+
+// =================
+// ESQUEMA DOS BANNERS
+// =================
+const BannerSchema = new mongoose.Schema({
+    imageUrl: { type: String, required: true },
+    linkUrl: { type: String },
+    isActive: { type: Boolean, default: true },
+}, { timestamps: true });
+
 
 // Exportando todos os modelos
 const User = mongoose.model('User', UserSchema);
 const Plan = mongoose.model('Plan', PlanSchema);
-const PlanInstance = mongoose.model('PlanInstance', PlanInstanceSchema);
 const Transaction = mongoose.model('Transaction', TransactionSchema);
 const Admin = mongoose.model('Admin', AdminSchema);
-const Banner = mongoose.model('Banner', BannerSchema);
-const LotteryCode = mongoose.model('LotteryCode', LotteryCodeSchema);
 const Settings = mongoose.model('Settings', SettingsSchema);
+const Banner = mongoose.model('Banner', BannerSchema);
 
-module.exports = { User, Plan, PlanInstance, Transaction, Admin, Banner, LotteryCode, Settings };
+module.exports = { User, Plan, Transaction, Admin, Settings, Banner };

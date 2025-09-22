@@ -1,27 +1,25 @@
-// config.js
-require('dotenv').config();
+const dotenv = require('dotenv');
+const path = require('path');
 
-// Este módulo centraliza todas as variáveis de ambiente da aplicação.
+// Carrega as variáveis de ambiente do arquivo .env
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+
 module.exports = {
-  // String de conexão com o banco de dados MongoDB Atlas.
-  mongodbUri: process.env.MONGODB_URI,
-
-  // Credenciais da API do Cloudinary para armazenamento e gerenciamento de imagens.
+  mongoURI: process.env.MONGO_URI,
+  port: process.env.PORT || 5000,
+  jwtSecret: process.env.JWT_SECRET,
   cloudinary: {
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET,
   },
-
-  // URL base da aplicação, usada principalmente para construir os links de convite.
   baseUrl: process.env.BASE_URL,
-
-  // Chave secreta usada para assinar e verificar os tokens de autenticação (JWT).
-  jwtSecret: process.env.JWT_SECRET,
-  
-  // Credenciais para a criação do administrador padrão na primeira inicialização do servidor.
-  defaultAdmin: {
-    username: process.env.DEFAULT_ADMIN_USERNAME,
-    password: process.env.DEFAULT_ADMIN_PASSWORD,
+  // Configurações de bônus que o admin pode alterar
+  bonusSettings: {
+    welcomeBonus: 50, // Valor padrão, pode ser sobrescrito pelo admin no DB
+    referralCommissionRate: 0.15, // 15% do valor do plano do convidado
+    dailyCommissionRate: 0.05, // 5% do lucro diário do convidado
   },
+  // URL de perfil padrão para novos usuários
+  defaultProfilePic: 'https://res.cloudinary.com/dje6f5k5u/image/upload/v1677399539/default-user-icon_s6k6z6.png' // Exemplo de URL
 };

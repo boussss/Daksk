@@ -1,120 +1,114 @@
-// routes.js
 const express = require('express');
-const { protectUser, protectAdmin } = require('./auth');
-const { uploadProfilePic, uploadDepositProof, uploadPlanImage, uploadBanner } = require('./uploadMiddleware');
+const router = express.Router();
 
-// --- Importação dos Controllers ---
-const userController = require('./userController');
-const adminController = require('./adminController');
-const plansController = require('./plansController');
+const productController = require('./productController');
+const dashboardController = require('./dashboardController');
 const settingsController = require('./settingsController');
 
-// --- Configuração dos Routers ---
-const userRouter = express.Router();
-const planRouter = express.Router();
-const adminRouter = express.Router();
-const settingsRouter = express.Router();
+const adminControllers = require('./adminControllers');
+const systemControllers = require('./systemControllers');
+const auth = require('./auth');
+const multer = require('multer');
+
+const {
+    emailLimiter,
+    loginLimiter,
+    registerRules,
+    loginRules,
+    emailRules,
+    resetPasswordRules,
+    validate,
+} = require('./validators');
+
+const upload = multer({ dest: 'uploads/' });
+
+// --- ROTAS PÚBLICAS E DE AUTENTICAÇÃO ---
+
+router.post('/register', registerRules(), validate, systemControllers.registerUser);
+router.post('/login', loginRules(), validate, loginLimiter, systemControllers.loginUser);
+
+router.post('/verify-email', systemControllers.verifyEmail);
+
+router.post('/resend-verification', emailRules(), validate, emailLimiter, systemControllers.resendVerificationCode);
+router.post('/forgot-password', emailRules(), validate, emailLimiter, systemControllers.forgotPassword);
+
+router.post('/reset-password', resetPasswordRules(), validate, systemControllers.resetPassword);
+
+router.post('/admin/login', adminControllers.loginAdmin); 
+
+router.get('/store/:storeName', systemControllers.getPublicStoreData);
+router.get('/product/:productId', systemControllers.getPublicProductData);
+router.get('/plans', systemControllers.getPlans);
+router.get('/bank-accounts', adminControllers.getBankAccounts); // Mantido público para a página de planos
+router.post('/interaction', systemControllers.logInteraction);
+router.get('/sitemap.xml', systemControllers.generateSitemap);
 
 
-//=====================================================
-//  ROTAS DE USUÁRIO (Acessíveis pelo App Mobile)
-//=====================================================
+// --- ROTAS DO DASHBOARD DO USUÁRIO ---
+const userProtectedRoutes = express.Router();
+userProtectedRoutes.use(auth.verifyUserToken); // Primeiro, verifica se o utilizador está logado
 
-// --- Autenticação e Cadastro ---
-userRouter.post('/register', userController.registerUser);
-userRouter.post('/login', userController.loginUser);
+// --- Rotas do Dashboard e Estatísticas (Apenas Leitura - GET) ---
+userProtectedRoutes.get('/dashboard', dashboardController.getDashboardData);
+userProtectedRoutes.get('/dashboard/charts', dashboardController.getDashboardChartData);
+userProtectedRoutes.get('/statistics', dashboardController.getStatisticsData);
+userProtectedRoutes.get('/orders', dashboardController.getOrders);
+userProtectedRoutes.get('/messages', dashboardController.getMessages);
 
-// --- Perfil e Dashboard (Rotas Protegidas) ---
-userRouter.get('/me', protectUser, userController.getUserProfile);
-userRouter.get('/dashboard', protectUser, userController.getDashboardData);
-userRouter.post('/profile/picture', protectUser, uploadProfilePic.single('image'), userController.uploadProfilePicture);
-userRouter.get('/wallet-summary', protectUser, userController.getWalletSummary);
+// --- Rotas de Produtos e Categorias (Leitura e Escrita) ---
+// Aplica o checkPlanStatus a todas as rotas de escrita (POST, PUT, DELETE)
+userProtectedRoutes.post('/products', auth.checkPlanStatus, upload.array('images', 10), productController.createProduct);
+userProtectedRoutes.get('/products', productController.getProducts);
+userProtectedRoutes.put('/products/:id', auth.checkPlanStatus, upload.array('images', 10), productController.updateProduct);
+userProtectedRoutes.delete('/products/:id', auth.checkPlanStatus, productController.deleteProduct);
+userProtectedRoutes.post('/products/:id/video', auth.checkPlanStatus, upload.single('video'), productController.addProductVideo);
+userProtectedRoutes.post('/products/:id/toggle-feature', auth.checkPlanStatus, productController.toggleProductFeature);
+userProtectedRoutes.post('/categories', auth.checkPlanStatus, productController.createCategory);
+userProtectedRoutes.get('/categories', productController.getCategories);
+userProtectedRoutes.put('/categories/:id', auth.checkPlanStatus, productController.updateCategory);
+userProtectedRoutes.delete('/categories/:id', auth.checkPlanStatus, productController.deleteCategory);
 
-// --- Rotas de Histórico ---
-userRouter.get('/history', protectUser, userController.getHistoryData);
-userRouter.get('/transactions', protectUser, userController.getUserTransactions);
+// --- Rotas de Configurações (Leitura e Escrita) ---
+userProtectedRoutes.get('/my-account', settingsController.getAccountInfo);
+userProtectedRoutes.put('/my-account', auth.checkPlanStatus, settingsController.updateAccountInfo); // <-- NOVA ROTA AQUI
+userProtectedRoutes.post('/visual', auth.checkPlanStatus, settingsController.updateVisualTheme);
+userProtectedRoutes.get('/visual', settingsController.getVisualTheme);
+userProtectedRoutes.post('/visual/apply-preset', auth.checkPlanStatus, settingsController.applyThemePreset);
+userProtectedRoutes.post('/media/cover', auth.checkPlanStatus, upload.single('coverImage'), settingsController.updateCoverImage);
+userProtectedRoutes.post('/media/profile', auth.checkPlanStatus, upload.single('profileImage'), settingsController.updateProfileImage);
+userProtectedRoutes.get('/media', settingsController.getMedia);
+userProtectedRoutes.delete('/media/:asset_id', auth.checkPlanStatus, settingsController.deleteMedia);
+userProtectedRoutes.post('/contacts', auth.checkPlanStatus, settingsController.updateContacts);
+userProtectedRoutes.get('/contacts', settingsController.getContacts);
+userProtectedRoutes.post('/payment/upload', auth.checkPlanStatus, upload.single('proof'), settingsController.uploadPaymentProof);
+userProtectedRoutes.get('/my-plan', settingsController.getCurrentPlan);
+userProtectedRoutes.get('/payment/history', settingsController.getPaymentHistory);
 
-// --- Transações do Usuário (Ações) ---
-userRouter.post('/deposit', protectUser, uploadDepositProof.single('proof'), userController.createDepositRequest);
-userRouter.post('/withdraw', protectUser, userController.createWithdrawalRequest);
-
-// --- Convites e Bônus (Rotas Protegidas) ---
-userRouter.get('/referrals', protectUser, userController.getReferralData);
-
-// --- Sorteio ---
-userRouter.post('/lottery/redeem', protectUser, userController.redeemLotteryCode);
-
-
-//=====================================================
-//  ROTAS DE PLANOS (Acessíveis pelo App Mobile)
-//=====================================================
-
-planRouter.get('/', protectUser, plansController.getAllAvailablePlans);
-planRouter.post('/:planId/activate', protectUser, plansController.activatePlan);
-planRouter.post('/collect', protectUser, plansController.collectDailyProfit);
-planRouter.post('/upgrade/:newPlanId', protectUser, plansController.upgradePlan);
-planRouter.post('/:instanceId/renew', protectUser, plansController.renewPlan);
-
-
-//=====================================================
-//  ROTAS DE CONFIGURAÇÕES PÚBLICAS
-//=====================================================
-
-settingsRouter.get('/public', protectUser, settingsController.getPublicSettings);
+router.use('/', userProtectedRoutes);
 
 
-//=====================================================
-//  ROTAS DE ADMINISTRAÇÃO (Acessíveis pelo Painel Admin)
-//=====================================================
+// --- ROTAS DO PAINEL DE ADMIN ---
+const adminProtectedRoutes = express.Router();
+adminProtectedRoutes.use(auth.verifyAdminToken);
 
-// --- Autenticação do Admin ---
-adminRouter.post('/login', adminController.loginAdmin);
+adminProtectedRoutes.get('/admin/dashboard', adminControllers.getAdminDashboard);
+adminProtectedRoutes.get('/admin/users', adminControllers.getAllUsers);
+adminProtectedRoutes.post('/admin/users/:id/block', adminControllers.blockUser);
+adminProtectedRoutes.post('/admin/users/:id/unblock', adminControllers.unblockUser);
+adminProtectedRoutes.post('/admin/users/assign-plan', adminControllers.assignPlanToUser);
+adminProtectedRoutes.post('/admin/users/assign-custom-plan', adminControllers.assignCustomPlanToUser);
+adminProtectedRoutes.get('/admin/payments', adminControllers.getPendingPayments);
+adminProtectedRoutes.post('/admin/payments/:id/approve', adminControllers.approvePayment);
+adminProtectedRoutes.post('/admin/payments/:id/reject', adminControllers.rejectPayment);
+adminProtectedRoutes.get('/admin/payments/history', adminControllers.getPaymentHistory);
+adminProtectedRoutes.post('/admin/plans', adminControllers.createPlan);
+adminProtectedRoutes.put('/admin/plans/:id', adminControllers.editPlan);
+adminProtectedRoutes.get('/admin/bank-accounts', adminControllers.getBankAccounts);
+adminProtectedRoutes.post('/admin/bank-accounts', adminControllers.addBankAccount);
+adminProtectedRoutes.delete('/admin/bank-accounts/:id', adminControllers.deleteBankAccount);
+adminProtectedRoutes.post('/admin/global-message', adminControllers.sendGlobalEmail);
+adminProtectedRoutes.get('/admin/system-logs', adminControllers.getSystemLogs);
 
-// --- Gerenciamento de Usuários ---
-adminRouter.get('/users', protectAdmin, adminController.getAllUsers);
-adminRouter.get('/users/search', protectAdmin, adminController.searchUsers);
-adminRouter.get('/users/:id/details', protectAdmin, adminController.getUserDetailsForAdmin);
-adminRouter.put('/users/:id/block', protectAdmin, adminController.toggleUserBlock);
-adminRouter.put('/users/:id/balance', protectAdmin, adminController.updateUserBalance);
-adminRouter.put('/users/:id/reset-pin', protectAdmin, adminController.resetUserPin);
-adminRouter.put('/users/:id/phone', protectAdmin, adminController.updateUserPhoneNumber); // NOVO: Rota para editar telefone
-adminRouter.delete('/users/:id', protectAdmin, adminController.deleteUser); // NOVO: Rota para apagar usuário
-adminRouter.get('/users/active-plans-count', protectAdmin, adminController.getActivePlanUsersCount); // NOVO: Rota para contar usuários com planos ativos
+router.use('/', adminProtectedRoutes);
 
-// --- Gerenciamento de Planos ---
-adminRouter.get('/plans', protectAdmin, plansController.getAllPlansForAdmin);
-adminRouter.post('/plans', protectAdmin, uploadPlanImage.single('image'), plansController.createPlan);
-adminRouter.put('/plans/:id', protectAdmin, uploadPlanImage.single('image'), plansController.updatePlan);
-adminRouter.delete('/plans/:id', protectAdmin, plansController.deletePlan);
-
-// --- Gerenciamento de Transações ---
-adminRouter.get('/deposits', protectAdmin, adminController.getPendingDeposits);
-adminRouter.post('/deposits/:transactionId/approve', protectAdmin, adminController.approveDeposit);
-adminRouter.post('/deposits/:transactionId/reject', protectAdmin, adminController.rejectDeposit);
-adminRouter.get('/withdrawals', protectAdmin, adminController.getPendingWithdrawals);
-adminRouter.post('/withdrawals/:transactionId/approve', protectAdmin, adminController.approveWithdrawal);
-adminRouter.post('/withdrawals/:transactionId/reject', protectAdmin, adminController.rejectWithdrawal);
-
-// --- Gerenciamento de Banners ---
-adminRouter.get('/banners', protectAdmin, adminController.getAllBanners);
-adminRouter.post('/banners', protectAdmin, uploadBanner.single('image'), adminController.createBanner);
-adminRouter.delete('/banners/:id', protectAdmin, adminController.deleteBanner);
-
-// --- Gerenciamento de Códigos de Sorteio ---
-adminRouter.post('/lottery-codes', protectAdmin, adminController.createLotteryCode);
-adminRouter.get('/lottery-codes', protectAdmin, adminController.getAllLotteryCodes);
-adminRouter.put('/lottery-codes/:id/toggle-status', protectAdmin, adminController.toggleLotteryCodeStatus);
-adminRouter.delete('/lottery-codes/:id', protectAdmin, adminController.deleteLotteryCode);
-
-// --- Gerenciamento de Configurações ---
-adminRouter.get('/settings', protectAdmin, adminController.getSettings);
-adminRouter.put('/settings', protectAdmin, adminController.updateSettings);
-
-
-// Exportando todos os routers para serem usados no server.js
-module.exports = {
-  userRouter,
-  planRouter,
-  adminRouter,
-  settingsRouter
-};
+module.exports = router;
