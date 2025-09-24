@@ -1,141 +1,127 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+const express = require('express');
+const dotenv = require('dotenv');
+const cors = require('cors');
+const { connectDB, cloudinary } = require('./config');
+const { protectUser, protectAdmin } = require('./auth');
+const multer = require('multer');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
-// ==================
-// ESQUEMA DO USUÁRIO
-// ==================
-const UserSchema = new mongoose.Schema({
-  userId: { type: String, required: true, unique: true, index: true },
-  phoneNumber: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  profilePicture: { 
-    type: String, 
-    default: 'https://res.cloudinary.com/dje6f5k5u/image/upload/v1625247913/default_user_icon.png'
+// Importar Models para inicialização
+const { Admin, Settings } = require('./models');
+
+// Importar Controllers
+const userController = require('./userController');
+const plansController = require('./plansController');
+const bonusController = require('./bonusController');
+const adminController = require('./adminController');
+
+// Carregar variáveis de ambiente
+dotenv.config();
+
+// Conectar ao Banco de Dados
+connectDB();
+
+const app = express();
+
+// Middleware para habilitar CORS para todas as requisições
+app.use(cors());
+
+// Middleware para parsear JSON
+app.use(express.json());
+
+// Configuração do Multer para Upload no Cloudinary
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'indodax', // Nome da pasta no Cloudinary
+    format: async (req, file) => 'png', // Formato da imagem
+    public_id: (req, file) => `${file.fieldname}_${Date.now()}`,
   },
-  // --- CAMPOS DE CARTEIRA ATUALIZADOS ---
-  country: { type: String, enum: ['MZ', 'AO', 'BR'], required: true }, // Moçambique, Angola, Brasil
-  localCurrency: { type: String, enum: ['MT', 'AOA', 'BRL'], required: true }, // Metical, Kwanza, Real
-  localWalletBalance: { type: Number, default: 0 }, // Carteira da moeda local
-  usdtWalletBalance: { type: Number, default: 0 }, // Carteira de USDT
-  
-  invitedBy: { type: String, default: null },
-  activePlans: [{
-    planId: { type: mongoose.Schema.Types.ObjectId, ref: 'Plan' },
-    investedAmount: Number,
-    currency: { type: String, enum: ['LOCAL', 'USDT'] },
-    dailyProfit: Number,
-    startDate: { type: Date, default: Date.now },
-    endDate: Date,
-    lastCollectionDate: Date,
-    totalEarned: { type: Number, default: 0 },
-    isActive: { type: Boolean, default: true }
-  }],
-  isBlocked: { type: Boolean, default: false },
-}, { timestamps: true });
-
-UserSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) {
-    return next();
-  }
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
 });
 
-// =================
-// ESQUEMA DO PLANO DE INVESTIMENTO
-// =================
-const PlanSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  // --- CAMPO DE MOEDA ADICIONADO ---
-  currency: { type: String, enum: ['LOCAL', 'USDT'], required: true, default: 'LOCAL' },
-  minAmount: { type: Number, required: true },
-  maxAmount: { type: Number, required: true },
-  dailyIncomeType: { type: String, enum: ['percentage', 'fixed'], required: true },
-  dailyIncomeValue: { type: Number, required: true },
-  duration: { type: Number, required: true },
-  imageUrl: { type: String, required: true },
-  isActive: { type: Boolean, default: true }
-}, { timestamps: true });
+const upload = multer({ storage: storage });
 
-// =================
-// ESQUEMA DE TRANSAÇÕES
-// =================
-const TransactionSchema = new mongoose.Schema({
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    type: { type: String, enum: ['deposit', 'withdrawal', 'investment', 'earning', 'bonus', 'commission'], required: true },
-    currency: { type: String, enum: ['MT', 'AOA', 'BRL', 'USDT'], required: true },
-    amount: { type: Number, required: true },
-    status: { type: String, enum: ['pending', 'completed', 'rejected'], default: 'pending' },
-    proofScreenshot: { type: String },
-    details: { type: String } // Ex: "Endereço da carteira para saque de USDT"
-}, { timestamps: true });
+// ===================================
+// INICIALIZAÇÃO DE DADOS PADRÃO
+// ===================================
+const initializeDefaultData = async () => {
+    try {
+        // 1. Criar Administrador Padrão
+        const adminExists = await Admin.findOne({ phoneNumber: process.env.ADMIN_DEFAULT_PHONE });
+        if (!adminExists) {
+            await Admin.create({
+                phoneNumber: process.env.ADMIN_DEFAULT_PHONE,
+                password: process.env.ADMIN_DEFAULT_PASSWORD
+            });
+            console.log('Administrador padrão criado com sucesso.');
+        }
 
-// =================
-// ESQUEMA DO ADMINISTRADOR
-// =================
-const AdminSchema = new mongoose.Schema({
-    phoneNumber: { type: String, required: true, unique: true },
-    password: { type: String, required: true }
-}, { timestamps: true });
+        // 2. Criar Configurações Globais
+        const settingsExist = await Settings.findOne({ settingId: 'global_settings' });
+        if (!settingsExist) {
+            await Settings.create({});
+            console.log('Configurações globais inicializadas com sucesso.');
+        }
+    } catch (error) {
+        console.error('Erro ao inicializar dados padrão:', error);
+    }
+};
 
-AdminSchema.pre('save', async function(next) {
-    if (!this.isModified('password')) { return next(); }
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
+// =======================
+// ROTAS DA API
+// =======================
+
+// --- Rotas Públicas de Usuário ---
+app.post('/api/users/register', userController.registerUser);
+app.post('/api/users/login', userController.loginUser);
+app.get('/api/settings/public', userController.getPublicSettings); // <-- ESTA É A NOVA ROTA
+
+// --- Rotas Privadas de Usuário ---
+app.get('/api/users/profile', protectUser, userController.getUserProfile);
+app.put('/api/users/profile/picture', protectUser, upload.single('profilePicture'), userController.updateUserProfilePicture);
+app.get('/api/users/referral', protectUser, userController.getReferralInfo);
+app.post('/api/users/deposit', protectUser, upload.single('proofScreenshot'), userController.createDepositRequest);
+app.post('/api/users/withdrawal', protectUser, userController.createWithdrawalRequest);
+app.get('/api/users/transactions', protectUser, userController.getUserTransactions);
+
+// --- Rotas de Planos ---
+app.get('/api/plans', plansController.getAllPlans);
+app.post('/api/plans/activate', protectUser, plansController.activatePlan);
+
+// --- Rotas de Bônus e Coleta ---
+app.post('/api/bonus/collect', protectUser, bonusController.collectDailyEarnings);
+app.get('/api/bonus/history', protectUser, bonusController.getCollectionHistory);
+
+// --- Rotas de Administrador ---
+app.post('/api/admin/login', adminController.loginAdmin);
+
+// Rotas protegidas de Admin
+app.get('/api/admin/users', protectAdmin, adminController.getUsers);
+app.get('/api/admin/users/:id', protectAdmin, adminController.getUserDetails);
+app.put('/api/admin/users/:id/block', protectAdmin, adminController.toggleUserBlock);
+app.put('/api/admin/users/:id/balance', protectAdmin, adminController.updateUserBalance);
+app.put('/api/admin/users/:id/credentials', protectAdmin, adminController.updateUserCredentials);
+app.post('/api/admin/plans', protectAdmin, upload.single('planImage'), adminController.createPlan);
+app.put('/api/admin/plans/:id', protectAdmin, upload.single('planImage'), adminController.updatePlan);
+app.delete('/api/admin/plans/:id', protectAdmin, adminController.deletePlan);
+app.get('/api/admin/transactions/pending', protectAdmin, adminController.getPendingTransactions);
+app.put('/api/admin/transactions/:id/status', protectAdmin, adminController.updateTransactionStatus);
+app.get('/api/admin/settings', protectAdmin, adminController.getSettings);
+app.put('/api/admin/settings', protectAdmin, adminController.updateSettings);
+app.post('/api/admin/banners', protectAdmin, upload.single('bannerImage'), adminController.addBanner);
+app.delete('/api/admin/banners/:id', protectAdmin, adminController.deleteBanner);
+
+// Rota de Teste
+app.get('/', (req, res) => {
+  res.send('API da Indodax está funcionando!');
 });
 
-// =================
-// ESQUEMA DE CONFIGURAÇÕES GLOBAIS
-// =================
-const SettingsSchema = new mongoose.Schema({
-    settingId: { type: String, default: "global_settings", unique: true },
-    
-    // --- BÔNUS DE BOAS-VINDAS POR PAÍS ---
-    welcomeBonusMZ: { type: Number, default: 50 },
-    welcomeBonusAO: { type: Number, default: 1000 },
-    welcomeBonusBR: { type: Number, default: 10 },
+// =======================
+// INICIALIZAÇÃO DO SERVIDOR
+// =======================
+const PORT = process.env.PORT || 5000;
 
-    referralCommissionPercentage: { type: Number, default: 15 },
-    dailyProfitSharePercentage: { type: Number, default: 5 },
-    
-    // --- CONTAS LOCAIS (APENAS MOÇAMBIQUE) ---
-    mpesaNumber: { type: String, default: "" },
-    mpesaHolderName: { type: String, default: "" },
-
-    emolaNumber: { type: String, default: "" },
-    emolaHolderName: { type: String, default: "" },
-
-    // --- CONTA USDT (GLOBAL) ---
-    usdtDepositAddress: { type: String, default: "" },
-
-    // --- TAXAS DE CÂMBIO FIXAS ---
-    usdtExchangeRates: {
-        MZ: { type: Number, default: 65 },  // 1 USDT = 65 MT
-        AO: { type: Number, default: 900 }, // 1 USDT = 900 AOA
-        BR: { type: Number, default: 6 }    // 1 USDT = 6 BRL
-    },
-
-    luckWheelEnabled: { type: Boolean, default: false }
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
+  initializeDefaultData();
 });
-
-// =================
-// ESQUEMA DOS BANNERS
-// =================
-const BannerSchema = new mongoose.Schema({
-    imageUrl: { type: String, required: true },
-    linkUrl: { type: String },
-    isActive: { type: Boolean, default: true },
-}, { timestamps: true });
-
-
-// Exportando todos os modelos
-const User = mongoose.model('User', UserSchema);
-const Plan = mongoose.model('Plan', PlanSchema);
-const Transaction = mongoose.model('Transaction', TransactionSchema);
-const Admin = mongoose.model('Admin', AdminSchema);
-const Settings = mongoose.model('Settings', SettingsSchema);
-const Banner = mongoose.model('Banner', BannerSchema);
-
-module.exports = { User, Plan, Transaction, Admin, Settings, Banner };
